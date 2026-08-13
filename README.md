@@ -36,24 +36,40 @@ Or build from https://github.com/RezaParsian/RpCli and set `rc.cliPath` to `dist
 npm install
 npm run compile
 ```
+# ساخت فایل VSIX
 
-Debug with F5, or package a VSIX:
+## مراحل
 
-```bash
-npx vsce package
+**۱.** وارد پوشه پروژه شو:
+```
+cd rc-vscode
 ```
 
-## Publish (your publisher only)
-
-Marketplace publisher for this extension: **`hanyehkhl`**
-
-```bash
-npx vsce login hanyehkhl
-npx vsce publish
+**۲.** پکیج‌ها رو نصب کن:
+```
+npm install
 ```
 
-Do **not** publish under `rezaparsian` unless that publisher account is yours.
+**۳.** کد رو کامپایل کن:
+```
+npm run compile
+```
 
+**۴.** فایل vsix رو بساز:
+```
+npm run package
+```
+
+این دستور از `vsce` (که تو devDependencies هست) استفاده می‌کنه و یه فایل مثل:
+```
+rc-vscode-0.1.0.vsix
+```
+تو همون پوشه می‌سازه.
+
+**۵.** برای نصبش تو VSCode:
+```
+code --install-extension rc-vscode-0.1.0.vsix
+```
 ## License
 
 MIT — see `LICENSE` (includes copyright notices for RezaParsian and hanyehkhl).

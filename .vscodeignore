@@ -1,13 +1,16 @@
 .vscode/**
 .vscode-test/**
 src/**
-node_modules/**
+/node_modules/**
 .gitignore
 tsconfig.json
+scripts/**
+cli-overlay/**
 **/*.map
 **/*.ts
 !out/**/*.js
 !LICENSE
 !NOTICE.md
 !README.md
+!PUBLISHING.md
 !package.json

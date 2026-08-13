@@ -9,3 +9,5 @@ out/
 !.env.example
 .idea/
 *.pem
+.vscode/settings.json
+vendor/

@@ -3,9 +3,12 @@ import { openChatPanel } from "./chatPanel";
 import { promptAndSaveToken } from "./chatCommon";
 import { RcChatViewProvider } from "./chatViewProvider";
 import { generateCommit } from "./commitCommand";
+import { setExtensionPath } from "./rcProcess";
 import { runRcInteractive } from "./terminalRunner";
 
 export function activate(context: vscode.ExtensionContext): void {
+  setExtensionPath(context.extensionPath);
+
   const provider = new RcChatViewProvider(context.extensionUri);
 
   context.subscriptions.push(

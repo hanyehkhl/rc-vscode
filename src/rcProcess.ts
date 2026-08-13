@@ -7,6 +7,13 @@ import { sanitizeDeepSeekToken } from "./tokenSetup";
 
 export type UiAgentMode = "ask" | "write" | "auto";
 
+let extensionPath: string | undefined;
+
+/** Call once from activate() so the bundled CLI can be found on any machine. */
+export function setExtensionPath(extPath: string): void {
+  extensionPath = extPath;
+}
+
 function getWorkspaceCwd(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
@@ -58,34 +65,49 @@ export function resolveNodePath(): string {
     return configured;
   }
 
-  try {
-    const found = execFileSync("where.exe", ["node"], {
-      encoding: "utf8",
-      windowsHide: true
-    })
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.toLowerCase().endsWith("node.exe"));
-    if (found && existsFile(found)) {
-      return found;
+  if (process.platform === "win32") {
+    try {
+      const found = execFileSync("where.exe", ["node"], {
+        encoding: "utf8",
+        windowsHide: true
+      })
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.toLowerCase().endsWith("node.exe"));
+      if (found && existsFile(found)) {
+        return found;
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
-  }
 
-  const fallbacks = [
-    path.join(process.env.ProgramFiles || "C:\\Program Files", "nodejs", "node.exe"),
-    path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "nodejs", "node.exe")
-  ];
-  for (const candidate of fallbacks) {
-    if (existsFile(candidate)) {
-      return candidate;
+    const fallbacks = [
+      path.join(process.env.ProgramFiles || "C:\\Program Files", "nodejs", "node.exe"),
+      path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "nodejs", "node.exe")
+    ];
+    for (const candidate of fallbacks) {
+      if (existsFile(candidate)) {
+        return candidate;
+      }
+    }
+  } else {
+    try {
+      const found = execFileSync("which", ["node"], { encoding: "utf8" }).trim();
+      if (found && existsFile(found)) {
+        return found;
+      }
+    } catch {
+      // ignore
     }
   }
 
   return "node";
 }
 
+/**
+ * Resolve the bundled / installed rp-cli entry. Independent of whichever folder
+ * the user has open in the workspace.
+ */
 export function resolveCliJsPath(): string | undefined {
   const configured = vscode.workspace.getConfiguration("rc").get<string>("cliPath")?.trim();
   if (configured) {
@@ -99,12 +121,39 @@ export function resolveCliJsPath(): string | undefined {
   }
 
   const candidates: string[] = [];
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const root = folder.uri.fsPath;
-    candidates.push(path.join(root, "dist", "source", "cli.js"));
-    candidates.push(path.join(root, "RpCli", "dist", "source", "cli.js"));
-    candidates.push(path.join(root, "..", "RpCli", "dist", "source", "cli.js"));
+
+  // 1) Self-contained CLI shipped inside the extension (any machine / any folder)
+  if (extensionPath) {
+    candidates.push(
+      path.join(extensionPath, "vendor", "rp-cli", "dist", "source", "cli.js")
+    );
+    candidates.push(
+      path.join(
+        extensionPath,
+        "node_modules",
+        "@rezaparsian",
+        "rp-cli",
+        "dist",
+        "source",
+        "cli.js"
+      )
+    );
   }
+
+  // 2) Global npm install of the same package
+  try {
+    const npmRoot = execFileSync("npm", ["root", "-g"], {
+      encoding: "utf8",
+      windowsHide: true,
+      shell: process.platform === "win32"
+    }).trim();
+    if (npmRoot) {
+      candidates.push(path.join(npmRoot, "@rezaparsian", "rp-cli", "dist", "source", "cli.js"));
+    }
+  } catch {
+    // ignore
+  }
+
   candidates.push(
     path.join(
       os.homedir(),
@@ -151,10 +200,7 @@ export function expandAtMentions(prompt: string, cwd: string | undefined): strin
         return full;
       }
       const stat = fs.statSync(absolute);
-      if (stat.isDirectory()) {
-        return `${prefix}@${relative}`;
-      }
-      if (stat.isFile()) {
+      if (stat.isDirectory() || stat.isFile()) {
         return `${prefix}@${relative}`;
       }
     } catch {
@@ -199,7 +245,7 @@ export function runPlainPrompt(
       ok: false,
       stdout: "",
       stderr:
-        "DeepSeek token not found. Run `rc` once in a terminal to save a token, or set Settings → rc.token.",
+        "DeepSeek token not found. Use /token or RC: Set DeepSeek Token.",
       code: 1
     });
   }
@@ -210,14 +256,14 @@ export function runPlainPrompt(
       ok: false,
       stdout: "",
       stderr:
-        "CLI file not found.\nSet Settings → rc.cliPath to RpCli\\dist\\source\\cli.js and run npm run build there.",
+        "Bundled rp-cli is missing from the extension. Reinstall the extension (VSIX) or run npm install in the extension folder.",
       code: 1
     });
   }
 
   const nodePath = resolveNodePath();
-  const cwd = getWorkspaceCwd();
-  const expanded = expandAtMentions(prompt, cwd);
+  const cwd = getWorkspaceCwd() || os.homedir();
+  const expanded = expandAtMentions(prompt, getWorkspaceCwd());
   const fullPrompt = buildPromptWithHistory(expanded, history);
   const env = {
     ...process.env,

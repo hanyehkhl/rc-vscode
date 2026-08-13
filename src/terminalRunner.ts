@@ -11,7 +11,7 @@ function buildRcCommand(args: string[]): string | undefined {
   const cliJs = resolveCliJsPath();
   if (!cliJs) {
     void vscode.window.showErrorMessage(
-      "RpCli not found. Set Settings → rc.cliPath to dist/source/cli.js."
+      "Bundled rp-cli is missing. Reinstall the RC extension."
     );
     return undefined;
   }

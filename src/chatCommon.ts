@@ -292,7 +292,7 @@ export function postStartupDiagnostics(webview: vscode.Webview): void {
   if (!cliJs) {
     void webview.postMessage({
       type: "error",
-      text: "RpCli not found. Build RpCli and set rc.cliPath to dist\\source\\cli.js."
+      text: "Bundled rp-cli is missing. Reinstall this extension from the VSIX (or run npm install && npm run prepare-cli in the extension source)."
     });
     return;
   }
