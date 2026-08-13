@@ -105,7 +105,6 @@ export function resolveCliJsPath(): string | undefined {
     candidates.push(path.join(root, "RpCli", "dist", "source", "cli.js"));
     candidates.push(path.join(root, "..", "RpCli", "dist", "source", "cli.js"));
   }
-  candidates.push("C:\\codes\\r and d\\claudee\\RpCli\\dist\\source\\cli.js");
   candidates.push(
     path.join(
       os.homedir(),
