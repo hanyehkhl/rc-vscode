@@ -1,0 +1,122 @@
+{
+  "name": "rc-vscode",
+  "displayName": "RC",
+  "description": "Unofficial VS Code chat panel for RpCli (rc) by RezaParsian — maintained by hanyehkhl",
+  "version": "0.1.0",
+  "publisher": "hanyehkhl",
+  "license": "MIT",
+  "author": {
+    "name": "hanyehkhl",
+    "url": "https://github.com/hanyehkhl"
+  },
+  "contributors": [
+    {
+      "name": "RezaParsian (RpCli upstream)",
+      "url": "https://github.com/RezaParsian"
+    }
+  ],
+  "keywords": [
+    "rp-cli",
+    "rc",
+    "deepseek",
+    "chat",
+    "ai"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hanyehkhl/rc-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hanyehkhl/rc-vscode/issues"
+  },
+  "homepage": "https://github.com/hanyehkhl/rc-vscode#readme",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other", "AI"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rc",
+          "title": "RC",
+          "icon": "media/rc-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rc": [
+        {
+          "type": "webview",
+          "id": "rc.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "rc.openChat",
+        "title": "RC: Open Chat"
+      },
+      {
+        "command": "rc.openChatEditor",
+        "title": "RC: Open Chat in Editor"
+      },
+      {
+        "command": "rc.focusChat",
+        "title": "RC: Focus Sidebar Chat"
+      },
+      {
+        "command": "rc.setToken",
+        "title": "RC: Set DeepSeek Token"
+      },
+      {
+        "command": "rc.openInteractive",
+        "title": "RC: Open Interactive Terminal"
+      },
+      {
+        "command": "rc.generateCommit",
+        "title": "RC: Generate Commit Message"
+      },
+      {
+        "command": "rc.generateCommitAll",
+        "title": "RC: Generate Commit Message (All Changes)"
+      }
+    ],
+    "configuration": {
+      "title": "RC",
+      "properties": {
+        "rc.token": {
+          "type": "string",
+          "default": "",
+          "description": "DeepSeek token (optional if ~/.config/rp-cli/.env already has DEEPSEEK_TOKEN)"
+        },
+        "rc.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to RpCli dist/source/cli.js (auto-detected if empty; falls back to global @rezaparsian/rp-cli)"
+        },
+        "rc.nodePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to node.exe (auto-detected if empty)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "^5.4.0"
+  }
+}

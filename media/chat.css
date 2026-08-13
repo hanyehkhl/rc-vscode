@@ -1,0 +1,454 @@
+:root {
+  --rc-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --rc-fg: var(--vscode-foreground);
+  --rc-muted: var(--vscode-descriptionForeground, #8b8b8b);
+  --rc-border: var(--vscode-widget-border, rgba(127, 127, 127, 0.28));
+  --rc-input: var(--vscode-input-background, rgba(127, 127, 127, 0.12));
+  --rc-hover: var(--vscode-list-hoverBackground, rgba(127, 127, 127, 0.12));
+  --rc-accent: var(--vscode-button-background, #0e639c);
+  --rc-accent-fg: var(--vscode-button-foreground, #fff);
+  --rc-radius: 16px;
+  --rc-font: var(--vscode-font-family);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--rc-font);
+  color: var(--rc-fg);
+  background: var(--rc-bg);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* —— Token / sign-in —— */
+.token-setup {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.token-card {
+  width: min(440px, 100%);
+  padding: 22px;
+  border: 1px solid var(--rc-border);
+  border-radius: 18px;
+  background: var(--rc-input);
+}
+
+.token-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.token-lead {
+  margin: 0 0 14px;
+  color: var(--rc-muted);
+  font-size: 13px;
+}
+
+.token-setup ol {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.token-command {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--rc-border);
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  color: var(--vscode-textLink-foreground, #4fc1ff);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.token-path {
+  font-size: 12px;
+  color: var(--rc-muted);
+}
+
+.token-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#tokenInput {
+  flex: 1 1 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--rc-border);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+}
+
+.btn-primary,
+.btn-secondary {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-primary {
+  background: var(--rc-accent);
+  color: var(--rc-accent-fg);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--rc-fg);
+  border: 1px solid var(--rc-border);
+}
+
+.token-setup-status {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.token-setup-status.ok {
+  color: #3dd68c;
+}
+
+.token-setup-status.err {
+  color: #f85149;
+}
+
+/* —— Chat shell —— */
+.chat-app {
+  height: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rc-border);
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-mark {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--rc-hover);
+}
+
+.thread-label {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--rc-fg);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.icon-btn:hover {
+  background: var(--rc-hover);
+}
+
+.messages {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 14px 8px;
+}
+
+.empty-state {
+  max-width: 420px;
+  margin: 12vh auto 0;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.empty-sub {
+  font-size: 13px;
+  color: var(--rc-muted);
+  margin-bottom: 18px;
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestion {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--rc-border);
+  background: transparent;
+  color: var(--rc-fg);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.suggestion:hover {
+  background: var(--rc-hover);
+}
+
+.message {
+  max-width: 100%;
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-user {
+  margin-left: auto;
+  width: fit-content;
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--rc-hover);
+}
+
+.message-assistant {
+  color: var(--rc-fg);
+}
+
+.message-error {
+  color: #f85149;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 81, 73, 0.35);
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.message-status {
+  color: var(--rc-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.message-role {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--rc-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.picker {
+  margin: 0 14px 8px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--rc-border);
+  border-radius: 12px;
+  background: var(--vscode-editorWidget-background, var(--rc-input));
+}
+
+.picker-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.picker-item.active,
+.picker-item:hover {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+  color: var(--vscode-list-activeSelectionForeground, #fff);
+}
+
+.picker-empty {
+  padding: 10px 12px;
+  color: var(--rc-muted);
+  font-size: 12px;
+}
+
+/* —— Composer (Codex-like) —— */
+.composer-wrap {
+  padding: 8px 12px 12px;
+}
+
+.composer-box {
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  background: var(--rc-input);
+  padding: 10px 10px 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+#promptInput {
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-input-foreground, var(--rc-fg));
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.45;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 2px 4px 8px;
+}
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--rc-border);
+  background: transparent;
+  color: var(--rc-fg);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip-btn:hover,
+.chip-btn.on {
+  background: var(--rc-hover);
+}
+
+.mode-chip {
+  font-weight: 600;
+}
+
+.mode-menu {
+  position: relative;
+}
+
+.mode-dropdown {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: 260px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--rc-border);
+  background: var(--vscode-editorWidget-background, var(--rc-bg));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  z-index: 20;
+}
+
+.mode-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--rc-fg);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.mode-option strong {
+  font-size: 12.5px;
+}
+
+.mode-option span {
+  font-size: 11px;
+  color: var(--rc-muted);
+}
+
+.mode-option:hover,
+.mode-option.active {
+  background: var(--rc-hover);
+}
+
+.send-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: var(--rc-fg);
+  color: var(--rc-bg);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.send-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.send-btn:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.composer-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+
+.status-hint {
+  font-size: 11px;
+  color: var(--rc-muted);
+}
