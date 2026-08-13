@@ -1,46 +1,30 @@
-# How to put this on YOUR GitHub (no rights conflict)
+# Publish under your name (hanyehkhl)
 
-This extension is **yours to publish** under GitHub/`publisher` **hanyehkhl**, while
-crediting upstream **RpCli** (MIT) by RezaParsian.
-
-## Already set in this repo
+## Already configured
 
 | Field | Value |
 |-------|--------|
-| Marketplace `publisher` | `hanyehkhl` |
-| GitHub author | https://github.com/hanyehkhl |
-| Intended repo | https://github.com/hanyehkhl/rc-vscode |
-| Upstream credit | `LICENSE`, `NOTICE.md`, `README.md`, `contributors` |
+| `publisher` | `hanyehkhl` |
+| Author / GitHub | https://github.com/hanyehkhl |
+| Repo URL in package.json | https://github.com/hanyehkhl/rc-vscode |
+| Upstream credit | `LICENSE`, `NOTICE.md`, README |
 
-## Local git (already prepared)
+This is an **unofficial** extension that integrates [RezaParsian/RpCli](https://github.com/RezaParsian/RpCli) (MIT). You keep your own publisher id; you do **not** use `rezaparsian`.
+
+## Local git
+
+A local `main` commit exists in this folder. **No remote push was done.**
+
+When you want to put it on GitHub yourself:
 
 ```powershell
 cd "C:\codes\r and d\claudee\rc-vscode"
-# git init + first commit were done locally — do NOT push until you want to
-```
-
-When **you** decide to publish the remote:
-
-```powershell
 gh repo create hanyehkhl/rc-vscode --public --source=. --remote=origin
-git push -u origin HEAD
+git push -u origin main
 ```
 
-(or create the empty repo on GitHub first, then `git remote add origin ...` and push)
+## Marketplace (optional)
 
-## Marketplace
-
-1. Create publisher **hanyehkhl** at https://marketplace.visualstudio.com/manage  
-   (must match `package.json` → `publisher`)
+1. Create publisher `hanyehkhl` at https://marketplace.visualstudio.com/manage
 2. `npx vsce login hanyehkhl`
 3. `npx vsce publish`
-
-Never use publisher id `rezaparsian` unless that account is yours.
-
-## Legal checklist (MIT-friendly)
-
-- [x] Keep MIT `LICENSE` with RezaParsian + your copyright
-- [x] Keep `NOTICE.md` / README “unofficial / based on RpCli”
-- [x] Your `publisher` / `author` / `repository` point to you
-- [x] Do not claim to be the official RpCli author
-- [x] Do not commit secrets (`.env`, tokens)
