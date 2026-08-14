@@ -6,6 +6,7 @@ src/**
 tsconfig.json
 scripts/**
 cli-overlay/**
+vendor/.node-cache/**
 **/*.map
 **/*.ts
 !out/**/*.js

@@ -59,10 +59,149 @@ function existsFile(filePath: string): boolean {
   }
 }
 
+function firstExistingFile(candidates: string[]): string | undefined {
+  for (const candidate of candidates) {
+    if (candidate && existsFile(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function nodeBinaryName(): string {
+  return process.platform === "win32" ? "node.exe" : "node";
+}
+
+/** Extra PATH entries GUI-launched VS Code often lacks (nvm/fnm/volta/asdf). */
+function extraNodeBinDirs(): string[] {
+  const home = os.homedir();
+  const dirs = [
+    "/usr/local/bin",
+    "/usr/bin",
+    "/opt/homebrew/bin",
+    "/snap/bin",
+    path.join(home, ".local", "bin"),
+    path.join(home, ".volta", "bin"),
+    path.join(home, ".asdf", "shims"),
+    path.join(home, ".fnm"),
+    path.join(home, ".nvm", "current", "bin")
+  ];
+
+  const nvmVersions = path.join(home, ".nvm", "versions", "node");
+  try {
+    const versions = fs.readdirSync(nvmVersions).sort().reverse();
+    for (const version of versions) {
+      dirs.push(path.join(nvmVersions, version, "bin"));
+    }
+  } catch {
+    // ignore
+  }
+
+  const fnmRoot = path.join(home, ".local", "share", "fnm", "node-versions");
+  try {
+    const versions = fs.readdirSync(fnmRoot).sort().reverse();
+    for (const version of versions) {
+      dirs.push(path.join(fnmRoot, version, "installation", "bin"));
+    }
+  } catch {
+    // ignore
+  }
+
+  return dirs;
+}
+
+function lookupNodeOnPath(searchPath: string): string | undefined {
+  const name = nodeBinaryName();
+  for (const dir of searchPath.split(path.delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    const candidate = path.join(dir, name);
+    if (existsFile(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function lookupNodeViaLoginShell(): string | undefined {
+  if (process.platform === "win32") {
+    return undefined;
+  }
+
+  const shells = [
+    process.env.SHELL,
+    "/bin/bash",
+    "/bin/zsh",
+    "/bin/sh"
+  ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
+
+  for (const shell of shells) {
+    try {
+      const found = execFileSync(shell, ["-lc", "command -v node"], {
+        encoding: "utf8",
+        timeout: 4000,
+        env: process.env
+      })
+        .trim()
+        .split(/\r?\n/)[0];
+      if (found && existsFile(found)) {
+        return found;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return undefined;
+}
+
+function bundledNodePath(): string | undefined {
+  if (!extensionPath) {
+    return undefined;
+  }
+
+  const name = nodeBinaryName();
+  const candidate = path.join(extensionPath, "vendor", "node", `${process.platform}-${process.arch}`, name);
+  if (!existsFile(candidate)) {
+    return undefined;
+  }
+
+  if (process.platform !== "win32") {
+    try {
+      fs.chmodSync(candidate, 0o755);
+    } catch {
+      // ignore
+    }
+  }
+
+  return candidate;
+}
+
+/**
+ * Prefer the Node binary shipped inside the extension so users do not need to
+ * install Node.js. Fall back to a system Node if the bundle is missing.
+ */
 export function resolveNodePath(): string {
   const configured = vscode.workspace.getConfiguration("rc").get<string>("nodePath")?.trim();
   if (configured && existsFile(configured)) {
     return configured;
+  }
+
+  const bundled = bundledNodePath();
+  if (bundled) {
+    return bundled;
+  }
+
+  const fromProcessPath = lookupNodeOnPath(process.env.PATH || "");
+  if (fromProcessPath) {
+    return fromProcessPath;
+  }
+
+  const extraDirs = extraNodeBinDirs();
+  const fromExtra = lookupNodeOnPath(extraDirs.join(path.delimiter));
+  if (fromExtra) {
+    return fromExtra;
   }
 
   if (process.platform === "win32") {
@@ -81,27 +220,38 @@ export function resolveNodePath(): string {
       // ignore
     }
 
-    const fallbacks = [
+    const winFallback = firstExistingFile([
       path.join(process.env.ProgramFiles || "C:\\Program Files", "nodejs", "node.exe"),
       path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "nodejs", "node.exe")
-    ];
-    for (const candidate of fallbacks) {
-      if (existsFile(candidate)) {
-        return candidate;
-      }
+    ]);
+    if (winFallback) {
+      return winFallback;
     }
   } else {
-    try {
-      const found = execFileSync("which", ["node"], { encoding: "utf8" }).trim();
-      if (found && existsFile(found)) {
-        return found;
-      }
-    } catch {
-      // ignore
+    const viaShell = lookupNodeViaLoginShell();
+    if (viaShell) {
+      return viaShell;
+    }
+
+    const unixFallback = firstExistingFile([
+      "/usr/bin/node",
+      "/usr/local/bin/node",
+      "/opt/homebrew/bin/node",
+      "/snap/bin/node"
+    ]);
+    if (unixFallback) {
+      return unixFallback;
     }
   }
 
-  return "node";
+  return "";
+}
+
+function nodeSearchPath(): string {
+  const bundled = bundledNodePath();
+  const bundledDir = bundled ? path.dirname(bundled) : "";
+  const extra = extraNodeBinDirs().join(path.delimiter);
+  return [bundledDir, process.env.PATH || "", extra].filter(Boolean).join(path.delimiter);
 }
 
 /**
@@ -262,11 +412,22 @@ export function runPlainPrompt(
   }
 
   const nodePath = resolveNodePath();
+  if (!nodePath) {
+    return Promise.resolve({
+      ok: false,
+      stdout: "",
+      stderr:
+        "Bundled Node.js is missing from this install. Reinstall RC from the latest VSIX (0.1.3+).",
+      code: 1
+    });
+  }
+
   const cwd = getWorkspaceCwd() || os.homedir();
   const expanded = expandAtMentions(prompt, getWorkspaceCwd());
   const fullPrompt = buildPromptWithHistory(expanded, history);
   const env = {
     ...process.env,
+    PATH: nodeSearchPath(),
     DEEPSEEK_TOKEN: token
   };
 
@@ -299,7 +460,7 @@ export function runPlainPrompt(
       resolve({
         ok: false,
         stdout,
-        stderr: `${error.message}\nnode=${nodePath}\ncli=${cliJs}`,
+        stderr: `Could not start the bundled Node.js (${error.message}).\nnode=${nodePath}\ncli=${cliJs}\nReinstall the RC extension.`,
         code: 1,
         cliJs
       });

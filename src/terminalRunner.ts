@@ -17,6 +17,12 @@ function buildRcCommand(args: string[]): string | undefined {
   }
 
   const nodePath = resolveNodePath();
+  if (!nodePath) {
+    void vscode.window.showErrorMessage(
+      "Bundled Node.js is missing. Reinstall the RC extension (VSIX 0.1.3+)."
+    );
+    return undefined;
+  }
   const quotedNode = `"${nodePath}"`;
   const quotedCli = `"${cliJs}"`;
   return [quotedNode, quotedCli, ...args].join(" ");

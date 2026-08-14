@@ -21,14 +21,10 @@ A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/
 
 ## Requirements
 
-1. Node.js 18+
-2. RpCli available locally or globally, e.g.:
+- A DeepSeek token (`/token` or **RC: Set DeepSeek Token**)
 
-```bash
-npm install --global @rezaparsian/rp-cli
-```
-
-Or build from https://github.com/RezaParsian/RpCli and set `rc.cliPath` to `dist/source/cli.js`.
+Node.js **and** the `rc` CLI are bundled inside the extension.  
+You do **not** need to install Node, npm, or RpCli on the machine.
 
 ## Develop
 

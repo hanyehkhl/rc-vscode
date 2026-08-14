@@ -2,7 +2,7 @@
   "name": "rc-vscode",
   "displayName": "RC",
   "description": "Unofficial VS Code chat panel for RpCli (rc) by RezaParsian — maintained by hanyehkhl",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "publisher": "hanyehkhl",
   "license": "MIT",
   "author": {
@@ -102,15 +102,16 @@
         "rc.nodePath": {
           "type": "string",
           "default": "",
-          "description": "Optional absolute path to node.exe (auto-detected if empty)"
+          "description": "Optional override. Leave empty to use the Node.js binary bundled in the extension."
         }
       }
     }
   },
   "scripts": {
     "prepare-cli": "node scripts/apply-cli-overlay.mjs",
+    "bundle-node": "node scripts/bundle-node.mjs",
     "postinstall": "npm run prepare-cli",
-    "vscode:prepublish": "npm run prepare-cli && npm run compile",
+    "vscode:prepublish": "npm run bundle-node && npm run prepare-cli && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --no-dependencies"
