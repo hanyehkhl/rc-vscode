@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { abortPlainPrompt } from "./rcProcess";
 import { getChatHtml, handleChatMessage, postStartupDiagnostics } from "./chatCommon";
 
 export class RcChatViewProvider implements vscode.WebviewViewProvider {
@@ -28,7 +29,7 @@ export class RcChatViewProvider implements vscode.WebviewViewProvider {
         {
           webview: webviewView.webview,
           close: () => {
-            // Sidebar cannot fully quit; clear by collapsing the view if possible.
+            abortPlainPrompt();
             void vscode.commands.executeCommand("workbench.action.closeSidebar");
           }
         },

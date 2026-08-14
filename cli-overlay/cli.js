@@ -24,7 +24,8 @@ const cli = meow(`
 	Options
 	  --commit-message, -c  Generate commit message from staged changes
 	  --commit-all, -a      Use git diff HEAD instead of --staged (use with -c)
-	  --thinking, -t        Enable thinking for a single prompt
+	  --thinking, -t        Enable thinking for a single prompt (medium)
+	  --thinking-effort     off|low|medium|hard (overrides --thinking)
 	  --quiet, -q           Hide thinking output from a single prompt
 	  --search, -s          Enable web search for a single prompt
 	  --plain               Non-interactive stdout mode (no Ink TUI)
@@ -46,6 +47,7 @@ const cli = meow(`
         commitMessage: { type: 'boolean', shortFlag: 'c' },
         commitAll: { type: 'boolean', shortFlag: 'a' },
         thinking: { type: 'boolean', shortFlag: 't' },
+        thinkingEffort: { type: 'string' },
         quiet: { type: 'boolean', shortFlag: 'q' },
         search: { type: 'boolean', shortFlag: 's' },
         plain: { type: 'boolean', default: false },
@@ -58,10 +60,11 @@ if (cli.flags.plain) {
         console.error('Error: --plain requires a prompt argument');
         process.exit(1);
     }
-    const { resolveAgentMode, runPlainPrompt } = await import('./actions/plainPrompt.js');
+    const { resolveAgentMode, resolveThinkingEffort, runPlainPrompt } = await import('./actions/plainPrompt.js');
     await runPlainPrompt({
         prompt,
         thinking: cli.flags.thinking ?? false,
+        thinkingEffort: resolveThinkingEffort(cli.flags.thinkingEffort, cli.flags.thinking ?? false),
         quiet: cli.flags.quiet ?? true,
         search: cli.flags.search ?? false,
         mode: resolveAgentMode(cli.flags.mode),

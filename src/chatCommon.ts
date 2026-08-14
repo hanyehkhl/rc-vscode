@@ -1,9 +1,11 @@
 import * as vscode from "vscode";
 import {
+  abortPlainPrompt,
   resolveCliJsPath,
   resolveDeepSeekToken,
   runPlainPrompt,
   type ChatTurn,
+  type ThinkingEffort,
   type UiAgentMode
 } from "./rcProcess";
 import {
@@ -19,6 +21,10 @@ import {
 
 function isAgentMode(value: unknown): value is UiAgentMode {
   return value === "ask" || value === "write" || value === "auto";
+}
+
+function isThinkingEffort(value: unknown): value is ThinkingEffort {
+  return value === "off" || value === "low" || value === "medium" || value === "hard";
 }
 
 export type ChatHost = {
@@ -119,12 +125,38 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
                 </div>
               </div>
               <button id="searchChip" class="chip-btn" type="button" title="/search">Search off</button>
-              <button id="thinkingChip" class="chip-btn" type="button" title="/thinking">Thinking off</button>
+              <div class="mode-menu">
+                <button id="thinkingChip" class="chip-btn" type="button" title="Thinking intensity">
+                  <span id="thinkingLabel">Think off</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
+                </button>
+                <div id="thinkingDropdown" class="mode-dropdown hidden">
+                  <button type="button" class="thinking-option active" data-thinking="off">
+                    <strong>Off</strong>
+                    <span>Fast — no chain-of-thought</span>
+                  </button>
+                  <button type="button" class="thinking-option" data-thinking="low">
+                    <strong>Low</strong>
+                    <span>Brief reasoning</span>
+                  </button>
+                  <button type="button" class="thinking-option" data-thinking="medium">
+                    <strong>Medium</strong>
+                    <span>Standard thinking</span>
+                  </button>
+                  <button type="button" class="thinking-option" data-thinking="hard">
+                    <strong>Hard</strong>
+                    <span>Deep thinking (expert)</span>
+                  </button>
+                </div>
+              </div>
               <button id="tokenChip" class="chip-btn" type="button" title="/token">Update token</button>
             </div>
             <button id="sendButton" class="send-btn" type="button" title="Send" aria-label="Send">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <svg id="sendIcon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M8 12V4M8 4L4 8M8 4l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <svg id="stopIcon" class="hidden" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor"/>
               </svg>
             </button>
           </div>
@@ -241,6 +273,11 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
     return;
   }
 
+  if (type === "cancelPrompt") {
+    abortPlainPrompt();
+    return;
+  }
+
   if (type !== "sendPrompt" || typeof message.text !== "string") {
     return;
   }
@@ -258,14 +295,23 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   const mode: UiAgentMode = isAgentMode(message.mode) ? message.mode : "write";
   const history = Array.isArray(message.history) ? (message.history as ChatTurn[]) : [];
   const search = Boolean(message.search);
-  const thinking = Boolean(message.thinking);
+  const thinkingEffort: ThinkingEffort = isThinkingEffort(message.thinkingEffort)
+    ? message.thinkingEffort
+    : message.thinking
+      ? "medium"
+      : "off";
 
   void webview.postMessage({
     type: "status",
     text: mode === "ask" ? "Thinking…" : "Working…"
   });
 
-  const result = await runPlainPrompt(text, mode, history, { search, thinking });
+  const result = await runPlainPrompt(text, mode, history, { search, thinkingEffort });
+
+  if (result.cancelled) {
+    void webview.postMessage({ type: "cancelled" });
+    return;
+  }
 
   if (result.ok) {
     void webview.postMessage({ type: "assistant", text: result.stdout });

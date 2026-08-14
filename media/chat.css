@@ -391,7 +391,8 @@ body {
   z-index: 20;
 }
 
-.mode-option {
+.mode-option,
+.thinking-option {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -406,17 +407,21 @@ body {
   cursor: pointer;
 }
 
-.mode-option strong {
+.mode-option strong,
+.thinking-option strong {
   font-size: 12.5px;
 }
 
-.mode-option span {
+.mode-option span,
+.thinking-option span {
   font-size: 11px;
   color: var(--rc-muted);
 }
 
 .mode-option:hover,
-.mode-option.active {
+.mode-option.active,
+.thinking-option:hover,
+.thinking-option.active {
   background: var(--rc-hover);
 }
 
@@ -440,6 +445,11 @@ body {
 
 .send-btn:not(:disabled):hover {
   opacity: 0.9;
+}
+
+.send-btn.stop-btn {
+  background: var(--rc-fg);
+  color: var(--rc-bg);
 }
 
 .composer-footer {

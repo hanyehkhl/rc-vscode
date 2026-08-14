@@ -1,6 +1,13 @@
 /* global acquireVsCodeApi */
 const vscode = acquireVsCodeApi();
 
+const THINKING_LEVELS = [
+  { id: "off", label: "Think off" },
+  { id: "low", label: "Think low" },
+  { id: "medium", label: "Think medium" },
+  { id: "hard", label: "Think hard" }
+];
+
 const MODES = [
   { id: "ask", label: "Chat" },
   { id: "write", label: "Agent" },
@@ -9,7 +16,7 @@ const MODES = [
 
 const SLASH_COMMANDS = [
   { name: "/search", description: "Toggle web search" },
-  { name: "/thinking", description: "Toggle thinking" },
+  { name: "/thinking", description: "Cycle thinking: off, low, medium, hard" },
   { name: "/token", description: "Set DeepSeek token" },
   { name: "/exit", description: "Close panel" },
   { name: "/quit", description: "Close panel" }
@@ -17,6 +24,8 @@ const SLASH_COMMANDS = [
 
 const input = document.getElementById("promptInput");
 const sendButton = document.getElementById("sendButton");
+const sendIcon = document.getElementById("sendIcon");
+const stopIcon = document.getElementById("stopIcon");
 const messages = document.getElementById("messages");
 const emptyState = document.getElementById("emptyState");
 const picker = document.getElementById("picker");
@@ -25,6 +34,8 @@ const modeButton = document.getElementById("modeButton");
 const modeDropdown = document.getElementById("modeDropdown");
 const searchChip = document.getElementById("searchChip");
 const thinkingChip = document.getElementById("thinkingChip");
+const thinkingLabel = document.getElementById("thinkingLabel");
+const thinkingDropdown = document.getElementById("thinkingDropdown");
 const tokenChip = document.getElementById("tokenChip");
 const attachButton = document.getElementById("attachButton");
 const newChatButton = document.getElementById("newChatButton");
@@ -44,13 +55,43 @@ const tokenLead = document.getElementById("tokenLead");
 
 let modeIndex = 1;
 let searchEnabled = false;
-let thinkingEnabled = false;
+let thinkingEffort = "off";
 let busy = false;
+let stopping = false;
+let ignoreNextResult = false;
 let emptyCtrlC = false;
 let pickerEntries = [];
 let pickerIndex = 0;
 let pickerKind = null;
 const history = [];
+
+function persistState() {
+  vscode.setState({
+    modeIndex,
+    searchEnabled,
+    thinkingEffort
+  });
+}
+
+function currentThinking() {
+  return THINKING_LEVELS.find((level) => level.id === thinkingEffort) || THINKING_LEVELS[0];
+}
+
+function setThinkingEffort(id) {
+  const level = THINKING_LEVELS.find((item) => item.id === id);
+  if (!level) return;
+  thinkingEffort = level.id;
+  updateChrome();
+  persistState();
+  statusHint.textContent = level.label;
+  thinkingDropdown.classList.add("hidden");
+}
+
+function cycleThinking() {
+  const index = THINKING_LEVELS.findIndex((level) => level.id === thinkingEffort);
+  const next = THINKING_LEVELS[(index + 1) % THINKING_LEVELS.length];
+  setThinkingEffort(next.id);
+}
 
 function currentMode() {
   return MODES[modeIndex];
@@ -58,13 +99,21 @@ function currentMode() {
 
 function updateChrome() {
   const mode = currentMode();
+  const thinking = currentThinking();
   modeLabel.textContent = mode.label;
   searchChip.textContent = searchEnabled ? "Search on" : "Search off";
   searchChip.classList.toggle("on", searchEnabled);
-  thinkingChip.textContent = thinkingEnabled ? "Thinking on" : "Thinking off";
-  thinkingChip.classList.toggle("on", thinkingEnabled);
+  if (thinkingLabel) {
+    thinkingLabel.textContent = thinking.label;
+  } else {
+    thinkingChip.textContent = thinking.label;
+  }
+  thinkingChip.classList.toggle("on", thinkingEffort !== "off");
   document.querySelectorAll(".mode-option").forEach((el) => {
     el.classList.toggle("active", el.getAttribute("data-mode") === mode.id);
+  });
+  document.querySelectorAll(".thinking-option").forEach((el) => {
+    el.classList.toggle("active", el.getAttribute("data-thinking") === thinkingEffort);
   });
 }
 
@@ -112,13 +161,33 @@ function clearStatus() {
 
 function setBusy(next) {
   busy = next;
-  sendButton.disabled = next;
-  input.disabled = next;
+  if (!next) {
+    stopping = false;
+  }
+  sendButton.disabled = false;
+  sendButton.classList.toggle("stop-btn", next);
+  sendButton.title = next ? "Stop" : "Send";
+  sendButton.setAttribute("aria-label", next ? "Stop" : "Send");
+  if (sendIcon) sendIcon.classList.toggle("hidden", next);
+  if (stopIcon) stopIcon.classList.toggle("hidden", !next);
+  input.focus();
+}
+
+function cancelRun() {
+  if (!busy) return;
+  stopping = true;
+  vscode.postMessage({ type: "cancelPrompt" });
+  statusHint.textContent = "Stopping…";
+  const line = messages.querySelector(".message-status");
+  if (line) {
+    line.textContent = "Stopping…";
+  }
 }
 
 function cycleMode() {
   modeIndex = (modeIndex + 1) % MODES.length;
   updateChrome();
+  persistState();
   statusHint.textContent = "Mode: " + currentMode().label;
 }
 
@@ -127,6 +196,7 @@ function setModeById(id) {
   if (index >= 0) {
     modeIndex = index;
     updateChrome();
+    persistState();
     statusHint.textContent = "Mode: " + currentMode().label;
   }
   modeDropdown.classList.add("hidden");
@@ -258,6 +328,11 @@ function showChatApp() {
 }
 
 function resetChat() {
+  if (busy) {
+    ignoreNextResult = true;
+    cancelRun();
+    setBusy(false);
+  }
   history.length = 0;
   messages.querySelectorAll(".message").forEach((node) => node.remove());
   clearStatus();
@@ -283,15 +358,19 @@ function runSlashOrSend() {
     hidePicker();
     searchEnabled = !searchEnabled;
     updateChrome();
+    persistState();
     statusHint.textContent = searchEnabled ? "Search on" : "Search off";
     return;
   }
-  if (command === "/thinking") {
+  if (command === "/thinking" || command.startsWith("/thinking ")) {
     input.value = "";
     hidePicker();
-    thinkingEnabled = !thinkingEnabled;
-    updateChrome();
-    statusHint.textContent = thinkingEnabled ? "Thinking on" : "Thinking off";
+    const arg = command.slice("/thinking".length).trim();
+    if (arg && THINKING_LEVELS.some((level) => level.id === arg)) {
+      setThinkingEffort(arg);
+    } else {
+      cycleThinking();
+    }
     return;
   }
   if (command === "/token") {
@@ -322,22 +401,32 @@ function sendPrompt(preset) {
   const historyPayload = history.slice(-8);
   history.push({ role: "user", content: text });
 
+  input.value = "";
+  emptyCtrlC = false;
+  ignoreNextResult = false;
+  setBusy(true);
+  statusHint.textContent = currentMode().id === "ask" ? "Thinking…" : "Working…";
+
   vscode.postMessage({
     type: "sendPrompt",
     text: text,
     mode: currentMode().id,
     search: searchEnabled,
-    thinking: thinkingEnabled,
+    thinking: thinkingEffort !== "off",
+    thinkingEffort: thinkingEffort,
     history: historyPayload
   });
-
-  input.value = "";
-  emptyCtrlC = false;
-  setBusy(true);
-  statusHint.textContent = currentMode().id === "ask" ? "Thinking…" : "Working…";
 }
 
-sendButton.addEventListener("click", runSlashOrSend);
+function handleSendOrStop() {
+  if (busy) {
+    cancelRun();
+    return;
+  }
+  runSlashOrSend();
+}
+
+sendButton.addEventListener("click", handleSendOrStop);
 attachButton.addEventListener("click", () => {
   if (!/@[^\s@]*$/.test(input.value)) {
     input.value += (input.value && !/\s$/.test(input.value) ? " @" : "@");
@@ -348,6 +437,7 @@ attachButton.addEventListener("click", () => {
 
 modeButton.addEventListener("click", (event) => {
   event.stopPropagation();
+  thinkingDropdown.classList.add("hidden");
   modeDropdown.classList.toggle("hidden");
 });
 
@@ -357,16 +447,26 @@ document.querySelectorAll(".mode-option").forEach((el) => {
 
 document.addEventListener("click", () => {
   modeDropdown.classList.add("hidden");
+  thinkingDropdown.classList.add("hidden");
 });
 
 searchChip.addEventListener("click", () => {
   searchEnabled = !searchEnabled;
   updateChrome();
+  persistState();
 });
 
-thinkingChip.addEventListener("click", () => {
-  thinkingEnabled = !thinkingEnabled;
-  updateChrome();
+thinkingChip.addEventListener("click", (event) => {
+  event.stopPropagation();
+  modeDropdown.classList.add("hidden");
+  thinkingDropdown.classList.toggle("hidden");
+});
+
+document.querySelectorAll(".thinking-option").forEach((el) => {
+  el.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setThinkingEffort(el.getAttribute("data-thinking"));
+  });
 });
 
 tokenChip.addEventListener("click", () => {
@@ -424,6 +524,10 @@ input.addEventListener("keydown", (event) => {
 
   if (event.ctrlKey && (event.key === "c" || event.key === "C")) {
     event.preventDefault();
+    if (busy) {
+      cancelRun();
+      return;
+    }
     if ((input.value || "").length > 0 || pickerKind) {
       input.value = "";
       hidePicker();
@@ -436,6 +540,18 @@ input.addEventListener("keydown", (event) => {
     }
     emptyCtrlC = true;
     statusHint.textContent = "Press Ctrl+C again to close";
+    return;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (busy) {
+      cancelRun();
+      return;
+    }
+    if (pickerKind) {
+      hidePicker();
+    }
     return;
   }
 
@@ -452,11 +568,6 @@ input.addEventListener("keydown", (event) => {
       renderPicker();
       return;
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      hidePicker();
-      return;
-    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       acceptPicker();
@@ -470,10 +581,19 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
+document.addEventListener("keydown", (event) => {
+  if (!busy) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    cancelRun();
+  }
+});
+
 window.addEventListener("message", (event) => {
   const message = event.data || {};
 
   if (message.type === "tokenSetup") {
+    setBusy(false);
     showTokenSetup(message);
     return;
   }
@@ -510,6 +630,9 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.type === "status") {
+    if (stopping || ignoreNextResult || !busy) {
+      return;
+    }
     showChatApp();
     clearStatus();
     const line = appendMessage("status", message.text || "Working…");
@@ -518,7 +641,22 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (ignoreNextResult && (message.type === "assistant" || message.type === "error" || message.type === "cancelled")) {
+    ignoreNextResult = false;
+    setBusy(false);
+    return;
+  }
+
   clearStatus();
+
+  if (message.type === "cancelled") {
+    showChatApp();
+    appendMessage("status", "Stopped");
+    setBusy(false);
+    statusHint.textContent = "Stopped";
+    input.focus();
+    return;
+  }
 
   if (message.type === "assistant") {
     showChatApp();
@@ -543,5 +681,16 @@ window.addEventListener("message", (event) => {
   }
 });
 
+updateChrome();
+const restored = vscode.getState() || {};
+if (typeof restored.modeIndex === "number" && restored.modeIndex >= 0 && restored.modeIndex < MODES.length) {
+  modeIndex = restored.modeIndex;
+}
+if (typeof restored.searchEnabled === "boolean") {
+  searchEnabled = restored.searchEnabled;
+}
+if (THINKING_LEVELS.some((level) => level.id === restored.thinkingEffort)) {
+  thinkingEffort = restored.thinkingEffort;
+}
 updateChrome();
 input.focus();

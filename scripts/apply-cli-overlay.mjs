@@ -17,6 +17,53 @@ function resolvePackageRoot() {
   }
 }
 
+function patchChatJs(chatJsPath) {
+  if (!existsSync(chatJsPath)) {
+    console.warn(`[prepare-cli] Chat.js not found: ${chatJsPath}`);
+    return;
+  }
+
+  const src = readFileSync(chatJsPath, "utf8");
+  if (src.includes("RC_THINKING_EFFORT")) {
+    return;
+  }
+
+  const oldSig = `export default async function chat({ token, model_type = 'default', thinking_enabled = false, search_enabled = false, challenge, sessionId, parentMessageId, prompt, onChunk, logFn, signal, }) {
+    if (thinking_enabled && model_type === 'vision')
+        throw new Error('This feature is not available for vision models');
+    if (search_enabled && model_type !== 'default')
+        throw new Error('Search is only supported in default model mode');`;
+
+  const newSig = `export default async function chat({ token, model_type = 'default', thinking_enabled = false, search_enabled = false, challenge, sessionId, parentMessageId, prompt, onChunk, logFn, signal, }) {
+    const envModel = (process.env.RC_MODEL_TYPE || '').trim();
+    if (envModel === 'expert' || envModel === 'default' || envModel === 'vision') {
+        model_type = envModel;
+    }
+    const thinkingEffort = (process.env.RC_THINKING_EFFORT || '').trim();
+    if (thinking_enabled && model_type === 'vision')
+        throw new Error('This feature is not available for vision models');
+    if (search_enabled && model_type !== 'default')
+        model_type = 'default';`;
+
+  const oldBody = `                thinking_enabled,
+                search_enabled,
+                ref_file_ids: [],`;
+
+  const newBody = `                thinking_enabled,
+                search_enabled,
+                thinking_mode: thinkingEffort || undefined,
+                reasoning_effort: thinkingEffort || undefined,
+                ref_file_ids: [],`;
+
+  if (!src.includes(oldSig) || !src.includes(oldBody)) {
+    console.warn("[prepare-cli] Chat.js patch skipped (upstream Chat.js changed)");
+    return;
+  }
+
+  writeFileSync(chatJsPath, src.replace(oldSig, newSig).replace(oldBody, newBody));
+  console.log(`[prepare-cli] Patched thinking effort into ${chatJsPath}`);
+}
+
 const pkgRoot = resolvePackageRoot();
 if (!pkgRoot) {
   console.error("[prepare-cli] Missing @rezaparsian/rp-cli. Run: npm install --legacy-peer-deps");
@@ -35,6 +82,7 @@ const targetActions = join(pkgRoot, "dist", "source", "actions");
 mkdirSync(targetActions, { recursive: true });
 cpSync(overlayCli, join(pkgRoot, "dist", "source", "cli.js"));
 cpSync(overlayPlain, join(targetActions, "plainPrompt.js"));
+patchChatJs(join(pkgRoot, "dist", "core-lib", "Chat.js"));
 
 // Build a self-contained vendor copy for the VSIX (works on any machine)
 rmSync(vendorRoot, { recursive: true, force: true });

@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from "child_process";
+import { spawn, execFileSync, type ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import { sanitizeDeepSeekToken } from "./tokenSetup";
 
 export type UiAgentMode = "ask" | "write" | "auto";
+export type ThinkingEffort = "off" | "low" | "medium" | "hard";
 
 let extensionPath: string | undefined;
 
@@ -377,17 +378,84 @@ export function buildPromptWithHistory(prompt: string, history: ChatTurn[]): str
 
 export type PlainPromptResult = {
   ok: boolean;
+  cancelled?: boolean;
   stdout: string;
   stderr: string;
   code: number | null;
   cliJs?: string;
 };
 
+type PromptSession = {
+  child: ChildProcess;
+  aborted: boolean;
+};
+
+let currentSession: PromptSession | undefined;
+
+function killChildProcess(child: ChildProcess): void {
+  const pid = child.pid;
+  if (!pid) {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    try {
+      execFileSync("taskkill", ["/pid", String(pid), "/T", "/F"], {
+        windowsHide: true,
+        timeout: 8000,
+        stdio: "ignore"
+      });
+      return;
+    } catch {
+      // fall through to child.kill
+    }
+  } else {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+    }
+    setTimeout(() => {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+      }
+    }, 800);
+    return;
+  }
+
+  try {
+    child.kill();
+  } catch {
+    // ignore
+  }
+}
+
+/** Stop the in-flight `rc --plain` run, if any. */
+export function abortPlainPrompt(): boolean {
+  const session = currentSession;
+  if (!session) {
+    return false;
+  }
+  session.aborted = true;
+  killChildProcess(session.child);
+  return true;
+}
+
 export function runPlainPrompt(
   prompt: string,
   mode: UiAgentMode = "write",
   history: ChatTurn[] = [],
-  options: { search?: boolean; thinking?: boolean } = {}
+  options: { search?: boolean; thinking?: boolean; thinkingEffort?: ThinkingEffort } = {}
 ): Promise<PlainPromptResult> {
   const token = resolveDeepSeekToken();
   if (!token) {
@@ -431,43 +499,70 @@ export function runPlainPrompt(
     DEEPSEEK_TOKEN: token
   };
 
+  const thinkingEffort: ThinkingEffort =
+    options.thinkingEffort || (options.thinking ? "medium" : "off");
+
   const args = [cliJs, "--plain", "--mode", uiModeToCliMode(mode)];
   if (options.search) {
     args.push("--search");
   }
-  if (options.thinking) {
-    args.push("--thinking");
+  if (thinkingEffort !== "off") {
+    args.push("--thinking-effort", thinkingEffort);
   }
   args.push(fullPrompt);
 
   return new Promise((resolve) => {
+    if (currentSession) {
+      currentSession.aborted = true;
+      killChildProcess(currentSession.child);
+    }
+
     const child = spawn(nodePath, args, {
       cwd,
       env,
-      windowsHide: true
+      windowsHide: true,
+      detached: process.platform !== "win32"
     });
+    const session: PromptSession = { child, aborted: false };
+    currentSession = session;
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    const finish = (result: PlainPromptResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (currentSession === session) {
+        currentSession = undefined;
+      }
+      resolve(result);
+    };
+
+    child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
     child.on("error", (error) => {
-      resolve({
+      finish({
         ok: false,
+        cancelled: session.aborted,
         stdout,
-        stderr: `Could not start the bundled Node.js (${error.message}).\nnode=${nodePath}\ncli=${cliJs}\nReinstall the RC extension.`,
+        stderr: session.aborted
+          ? ""
+          : `Could not start the bundled Node.js (${error.message}).\nnode=${nodePath}\ncli=${cliJs}\nReinstall the RC extension.`,
         code: 1,
         cliJs
       });
     });
     child.on("close", (code) => {
-      resolve({
-        ok: code === 0 && Boolean(stdout.trim()),
+      finish({
+        ok: !session.aborted && code === 0 && Boolean(stdout.trim()),
+        cancelled: session.aborted,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
         code,

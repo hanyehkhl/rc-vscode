@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { abortPlainPrompt } from "./rcProcess";
 import { getChatHtml, handleChatMessage, postStartupDiagnostics } from "./chatCommon";
 
 export function openChatPanel(context: vscode.ExtensionContext): void {
@@ -27,6 +28,7 @@ export function openChatPanel(context: vscode.ExtensionContext): void {
   });
 
   panel.onDidDispose(() => {
+    abortPlainPrompt();
     subscription.dispose();
   });
 }
