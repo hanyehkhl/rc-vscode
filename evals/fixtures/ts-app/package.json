@@ -1,0 +1,10 @@
+{
+  "name": "fixture-ts-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small task-list app used as an eval fixture.",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  }
+}

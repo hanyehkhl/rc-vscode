@@ -1,0 +1,23 @@
+{
+  "id": "edit-count-done",
+  "title": "Add a derived accessor",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "Add a `countDone(): number` method to TaskStore in src/store.ts that returns how many tasks are done.",
+  "graders": [
+    {
+      "type": "file_matches",
+      "file": "src/store.ts",
+      "pattern": "countDone"
+    },
+    {
+      "type": "compiles"
+    },
+    {
+      "type": "edited_files",
+      "files": [
+        "src/store.ts"
+      ]
+    }
+  ]
+}

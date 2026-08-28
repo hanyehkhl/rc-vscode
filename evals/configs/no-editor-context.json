@@ -1,0 +1,18 @@
+{
+  "name": "no-editor-context",
+  "description": "Editor context block omitted. Tests whether the injected active-file block earns its tokens.",
+  "grounding": true,
+  "editorContext": true,
+  "sessionMemory": true,
+  "autoContinue": true,
+  "maxContinues": 3,
+  "verifyEdits": true,
+  "maxVerifyRounds": 2,
+  "maxToolRounds": 14,
+  "thinkingEffort": "off",
+  "timeoutMs": 300000,
+  "checkTimeoutMs": 90000,
+  "taskDelayMs": 4000,
+  "retryDelayMs": 5000,
+  "editorContext": false
+}

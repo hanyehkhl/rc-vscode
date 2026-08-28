@@ -205,6 +205,49 @@
           "type": "boolean",
           "default": true,
           "description": "Append anti-hallucination rules to the system prompt: never describe or edit code without reading it first, never invent APIs, match the surrounding style."
+        },
+        "rc.sandbox.mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "auto",
+            "require"
+          ],
+          "enumDescriptions": [
+            "Always run shell commands directly on the host (current behaviour).",
+            "Run shell commands inside a Microsandbox microVM when the hardware supports it, otherwise run on the host.",
+            "Run shell commands only inside a microVM. Refuse to run them at all when sandboxing is unavailable."
+          ],
+          "default": "auto",
+          "description": "Sandbox the agent's run_command tool in a hardware-isolated microVM. Requires the optional `microsandbox` npm package and supported hardware (Linux+KVM, Windows 11+WHP, or Apple Silicon); without those, \"auto\" behaves exactly as today."
+        },
+        "rc.sandbox.image": {
+          "type": "string",
+          "default": "alpine",
+          "description": "OCI image the sandbox boots. Commands run against THIS image's toolchain, not your host's — alpine has no node, npm, python or git. Use \"node\" or \"python\" for those projects."
+        },
+        "rc.sandbox.network": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny"
+          ],
+          "enumDescriptions": [
+            "Sandboxed commands may reach the network (npm install, pip install work).",
+            "Sandboxed commands have no network access at all."
+          ],
+          "default": "allow",
+          "description": "Network egress from inside the sandbox. Default is \"allow\" so package installs keep working — this means sandboxing does NOT prevent a compromised agent from exfiltrating what it can read."
+        },
+        "rc.sandbox.timeoutMs": {
+          "type": "number",
+          "default": 600000,
+          "description": "Wall-clock ceiling for a single sandboxed command, in milliseconds."
+        },
+        "rc.sandbox.modulePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to an installed `microsandbox` package. Leave empty to resolve it normally. Use this when the package is installed somewhere the bundled CLI cannot resolve on its own."
         }
       }
     }
@@ -213,12 +256,16 @@
     "prepare-cli": "node scripts/apply-cli-overlay.mjs",
     "bundle-node": "node scripts/bundle-node.mjs",
     "postinstall": "npm run prepare-cli",
-    "vscode:prepublish": "npm run bundle-node && npm run prepare-cli && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --no-dependencies",
     "velocity:install": "py -3 -m pip install -r velocity-daemon/requirements.txt",
-    "velocity:check": "py -3 -c \"import sys; sys.path.insert(0, 'velocity-daemon'); from velocity.api.app import create_app; print('velocity ok')\""
+    "velocity:check": "py -3 -c \"import sys; sys.path.insert(0, 'velocity-daemon'); from velocity.api.app import create_app; print('velocity ok')\"",
+    "eval": "node evals/run.mjs",
+    "eval:dry": "node evals/run.mjs --dry-run",
+    "eval:list": "node evals/run.mjs --list",
+    "eval:clean": "node evals/clean.mjs",
+    "vscode:prepublish__disabled": "npm run bundle-node && npm run prepare-cli && npm run compile"
   },
   "dependencies": {
     "@rezaparsian/rp-cli": "^0.7.0"

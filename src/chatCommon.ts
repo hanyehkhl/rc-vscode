@@ -331,6 +331,20 @@ function describeEvent(event: RcEvent): string {
       return target ? `edited ${target}` : "";
     case "limit":
       return "Tool-round limit reached — continuing…";
+    // Where a shell command actually ran. A user who believes commands are
+    // sandboxed when they are not is worse off than one who knows they are
+    // not, so the unsandboxed case is stated just as plainly as the safe one.
+    case "sandbox": {
+      if (event.payload.refused === true) {
+        return `run_command refused — sandboxing required but unavailable (${String(event.payload.reason ?? "")})`;
+      }
+      if (event.payload.sandboxed === true) {
+        const image = String(event.payload.image ?? "");
+        const network = event.payload.network === "deny" ? "no network" : "network open";
+        return `sandboxed in microVM (${image}, ${network})`;
+      }
+      return `NOT sandboxed — ran on the host (${String(event.payload.reason ?? "")})`;
+    }
     default:
       return "";
   }

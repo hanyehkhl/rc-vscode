@@ -1,0 +1,17 @@
+{
+  "id": "verify-truncate-long-titles",
+  "title": "Cross-module import that must stay type-clean",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "In src/format.ts, truncate any task title longer than the project's maximum title length to that length followed by an ellipsis. Reuse the existing constant rather than hard-coding the number.",
+  "graders": [
+    {
+      "type": "file_contains",
+      "file": "src/format.ts",
+      "text": "MAX_TITLE_LENGTH"
+    },
+    {
+      "type": "compiles"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "no-verify",
+  "description": "Verify loop disabled. Isolates how much of the pass rate the self-repair round is carrying.",
+  "grounding": true,
+  "editorContext": true,
+  "sessionMemory": true,
+  "autoContinue": true,
+  "maxContinues": 3,
+  "verifyEdits": true,
+  "maxVerifyRounds": 2,
+  "maxToolRounds": 14,
+  "thinkingEffort": "off",
+  "timeoutMs": 300000,
+  "checkTimeoutMs": 90000,
+  "taskDelayMs": 4000,
+  "retryDelayMs": 5000,
+  "verifyEdits": false
+}

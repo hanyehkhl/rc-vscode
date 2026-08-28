@@ -1,0 +1,27 @@
+{
+  "id": "edit-readme-scripts",
+  "title": "Edit a non-code file",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "Add a short \"Scripts\" section to README.md documenting the npm script this project uses to type-check itself. Use the real script name.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file"
+    },
+    {
+      "type": "file_contains",
+      "file": "README.md",
+      "text": "npm run typecheck"
+    },
+    {
+      "type": "edited_files",
+      "files": [
+        "README.md"
+      ]
+    },
+    {
+      "type": "compiles"
+    }
+  ]
+}

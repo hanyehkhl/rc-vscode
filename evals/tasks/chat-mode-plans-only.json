@@ -1,0 +1,20 @@
+{
+  "id": "chat-mode-plans-only",
+  "title": "Chat mode plans a change without making it",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "Plan how you would add optional due dates to tasks. List the files you would touch and what would change in each. Do not modify anything.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "task\\.ts"
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

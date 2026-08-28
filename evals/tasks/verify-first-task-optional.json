@@ -1,0 +1,17 @@
+{
+  "id": "verify-first-task-optional",
+  "title": "Return type trips noUncheckedIndexedAccess",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "Add a method `first(): Task` to TaskStore in src/store.ts that returns the first task in insertion order. Assume the store is not empty.",
+  "graders": [
+    {
+      "type": "file_matches",
+      "file": "src/store.ts",
+      "pattern": "first\\s*\\("
+    },
+    {
+      "type": "compiles"
+    }
+  ]
+}

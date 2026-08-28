@@ -1,0 +1,23 @@
+{
+  "id": "edit-tag-prefix",
+  "title": "Small formatting change in one function",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "In src/format.ts, render each tag with a leading '#' — so a task tagged \"work\" shows as \"#work\". Keep the rest of the format identical.",
+  "graders": [
+    {
+      "type": "file_contains",
+      "file": "src/format.ts",
+      "text": "#"
+    },
+    {
+      "type": "compiles"
+    },
+    {
+      "type": "edited_files",
+      "files": [
+        "src/format.ts"
+      ]
+    }
+  ]
+}

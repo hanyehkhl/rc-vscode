@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { sanitizeDeepSeekToken } from "./tokenSetup";
+import { cgcBinaryForPython, ensureManagedPython } from "./velocity/pythonEnv";
 
 export type UiAgentMode = "ask" | "write" | "auto";
 export type ThinkingEffort = "off" | "low" | "medium" | "hard";
@@ -17,6 +18,26 @@ export function setExtensionPath(extPath: string): void {
 
 function getWorkspaceCwd(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+async function attachCodegraphEnv(env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
+  if (!extensionPath) {
+    return env;
+  }
+  const requirements = path.join(extensionPath, "velocity-daemon", "requirements.txt");
+  try {
+    const python = await ensureManagedPython(requirements, { quiet: true });
+    if (!python) {
+      return env;
+    }
+    const cgcBin = cgcBinaryForPython(python);
+    if (fs.existsSync(cgcBin)) {
+      return { ...env, RC_CGC_BIN: cgcBin };
+    }
+  } catch {
+    // Code search degrades to substring search when Python is unavailable.
+  }
+  return env;
 }
 
 function getConfiguredToken(): string {
@@ -638,6 +659,20 @@ export function runPlainPrompt(
     env.RC_GROUNDING = "0";
   }
 
+  // Sandboxing for run_command. Read here rather than in the CLI so the
+  // settings live with the rest of the extension's configuration; the CLI
+  // treats these env vars as its only interface and degrades to the host path
+  // when Microsandbox is absent.
+  const sandboxConfig = vscode.workspace.getConfiguration("rc.sandbox");
+  env.RC_SANDBOX = sandboxConfig.get<string>("mode", "auto");
+  env.RC_SANDBOX_IMAGE = sandboxConfig.get<string>("image", "alpine");
+  env.RC_SANDBOX_NETWORK = sandboxConfig.get<string>("network", "allow");
+  env.RC_SANDBOX_TIMEOUT_MS = String(sandboxConfig.get<number>("timeoutMs", 600000));
+  const sandboxModule = sandboxConfig.get<string>("modulePath", "").trim();
+  if (sandboxModule) {
+    env.RC_SANDBOX_MODULE = sandboxModule;
+  }
+
   const thinkingEffort: ThinkingEffort =
     options.thinkingEffort || (options.thinking ? "medium" : "off");
 
@@ -651,7 +686,8 @@ export function runPlainPrompt(
     args.push("--thinking-effort", thinkingEffort);
   }
 
-  return new Promise((resolve) => {
+  return attachCodegraphEnv(env).then((envWithCgc) =>
+    new Promise((resolve) => {
     if (currentSession) {
       currentSession.aborted = true;
       killChildProcess(currentSession.child);
@@ -659,7 +695,7 @@ export function runPlainPrompt(
 
     const child = spawn(nodePath, args, {
       cwd,
-      env,
+      env: envWithCgc,
       windowsHide: true,
       detached: process.platform !== "win32"
     });
@@ -762,5 +798,5 @@ export function runPlainPrompt(
         limitReached
       });
     });
-  });
+  }));
 }

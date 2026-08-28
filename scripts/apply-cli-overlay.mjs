@@ -93,6 +93,23 @@ if (!pkgRoot) {
   process.exit(1);
 }
 
+function applyOverlayToTarget(targetDistSource) {
+  const targetActions = join(targetDistSource, "actions");
+  mkdirSync(targetActions, { recursive: true });
+  cpSync(overlayCli, join(targetDistSource, "cli.js"));
+  cpSync(overlayActions, targetActions, { recursive: true });
+  if (existsSync(overlayVelocity)) {
+    cpSync(overlayVelocity, join(targetDistSource, "velocity"), { recursive: true });
+  }
+  const overlayDirs = ["server", "prompts", "tools"];
+  for (const dir of overlayDirs) {
+    const overlayPath = join(extRoot, "cli-overlay", dir);
+    if (existsSync(overlayPath)) {
+      cpSync(overlayPath, join(targetDistSource, dir), { recursive: true });
+    }
+  }
+}
+
 const overlayCli = join(extRoot, "cli-overlay", "cli.js");
 const overlayActions = join(extRoot, "cli-overlay", "actions");
 const overlayPlain = join(overlayActions, "plainPrompt.js");
@@ -103,13 +120,7 @@ if (!existsSync(overlayCli) || !existsSync(overlayPlain)) {
 }
 
 // Apply overlay into installed package (for local F5 / development)
-const targetActions = join(pkgRoot, "dist", "source", "actions");
-mkdirSync(targetActions, { recursive: true });
-cpSync(overlayCli, join(pkgRoot, "dist", "source", "cli.js"));
-cpSync(overlayActions, targetActions, { recursive: true });
-if (existsSync(overlayVelocity)) {
-  cpSync(overlayVelocity, join(pkgRoot, "dist", "source", "velocity"), { recursive: true });
-}
+applyOverlayToTarget(join(pkgRoot, "dist", "source"));
 patchChatJs(join(pkgRoot, "dist", "core-lib", "Chat.js"));
 
 // Build a self-contained vendor copy for the VSIX (works on any machine)
@@ -135,12 +146,7 @@ writeFileSync(
 
 cpSync(join(pkgRoot, "dist"), join(vendorRoot, "dist"), { recursive: true });
 // Ensure overlay is present in vendor too
-mkdirSync(join(vendorRoot, "dist", "source", "actions"), { recursive: true });
-cpSync(overlayCli, join(vendorRoot, "dist", "source", "cli.js"));
-cpSync(overlayActions, join(vendorRoot, "dist", "source", "actions"), { recursive: true });
-if (existsSync(overlayVelocity)) {
-  cpSync(overlayVelocity, join(vendorRoot, "dist", "source", "velocity"), { recursive: true });
-}
+applyOverlayToTarget(join(vendorRoot, "dist", "source"));
 patchChatJs(join(vendorRoot, "dist", "core-lib", "Chat.js"));
 
 console.log("[prepare-cli] Installing production deps into vendor/rp-cli ...");

@@ -1,0 +1,32 @@
+{
+  "id": "edit-add-clear-method",
+  "title": "Add one method to one class",
+  "fixture": "ts-app",
+  "mode": "write",
+  "editorContext": {
+    "file": "src/store.ts",
+    "languageId": "typescript"
+  },
+  "prompt": "Add a `clear()` method to the TaskStore class in src/store.ts. It removes every task and returns nothing. Do not change anything else.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file",
+      "pathContains": "store.ts"
+    },
+    {
+      "type": "file_matches",
+      "file": "src/store.ts",
+      "pattern": "clear\\s*\\(\\s*\\)"
+    },
+    {
+      "type": "compiles"
+    },
+    {
+      "type": "edited_files",
+      "files": [
+        "src/store.ts"
+      ]
+    }
+  ]
+}

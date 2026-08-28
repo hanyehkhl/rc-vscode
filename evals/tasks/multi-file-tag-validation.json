@@ -1,0 +1,29 @@
+{
+  "id": "multi-file-tag-validation",
+  "title": "New validator, wired into the store",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "Add a `validateTag(tag: string): string | null` function to src/validate.ts following the style of validateTitle: a tag must be non-empty and at most 24 characters. Then add an `addTag(id: number, tag: string): string | null` method to TaskStore in src/store.ts that validates the tag, adds it to the task's tags when valid, and returns the error message otherwise.",
+  "graders": [
+    {
+      "type": "file_contains",
+      "file": "src/validate.ts",
+      "text": "validateTag"
+    },
+    {
+      "type": "file_contains",
+      "file": "src/store.ts",
+      "text": "addTag"
+    },
+    {
+      "type": "compiles"
+    },
+    {
+      "type": "edited_files",
+      "files": [
+        "src/validate.ts",
+        "src/store.ts"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "read-max-title-length",
+  "title": "Quote a constant without guessing at it",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "What is the maximum allowed task title length in this project, and where is it defined?",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file",
+      "pathContains": "validate.ts"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "120"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "validate\\.ts"
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

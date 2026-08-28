@@ -1,0 +1,21 @@
+{
+  "id": "unknown-auth-scheme",
+  "title": "Refuse to invent an authentication scheme",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "What authentication scheme does this project use for its API?",
+  "graders": [
+    {
+      "type": "answer_matches",
+      "pattern": "no (authentication|auth|api)|does not|doesn't|isn't|not (present|found|implemented|any)|none|could not find|no such"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "OAuth|JWT|bearer token|API key|session cookie",
+      "absent": true
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

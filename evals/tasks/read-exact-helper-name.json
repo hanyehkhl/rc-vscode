@@ -1,0 +1,26 @@
+{
+  "id": "read-exact-helper-name",
+  "title": "Name a real API rather than inventing a plausible one",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "There is an existing helper that renders a list of tasks as text. Give me its exact name and its exact signature.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file",
+      "pathContains": "format.ts"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "formatList"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "renderList|printList|listTasks|toString",
+      "absent": true
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

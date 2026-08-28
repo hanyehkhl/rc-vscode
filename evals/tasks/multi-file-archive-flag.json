@@ -1,0 +1,27 @@
+{
+  "id": "multi-file-archive-flag",
+  "title": "A field threaded through three files",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "Add an `archived: boolean` field to Task, defaulting to false in createTask. Add an `archive(id: number): boolean` method to TaskStore. Make formatList skip archived tasks.",
+  "graders": [
+    {
+      "type": "file_contains",
+      "file": "src/task.ts",
+      "text": "archived"
+    },
+    {
+      "type": "file_contains",
+      "file": "src/store.ts",
+      "text": "archive"
+    },
+    {
+      "type": "file_contains",
+      "file": "src/format.ts",
+      "text": "archived"
+    },
+    {
+      "type": "compiles"
+    }
+  ]
+}

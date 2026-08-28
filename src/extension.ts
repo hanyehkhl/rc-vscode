@@ -5,7 +5,8 @@ import { RcChatViewProvider } from "./chatViewProvider";
 import { generateCommit } from "./commitCommand";
 import { initAgentsFile } from "./agentsInit";
 import { initChatHistory } from "./chatHistory";
-import { setVelocityStoragePath } from "./velocity/pythonEnv";
+import { setManagedPythonStoragePath } from "./velocity/pythonEnv";
+import { startCodegraphBackgroundIndexer } from "./codegraphIndexer";
 import { setExtensionPath } from "./rcProcess";
 import { runRcInteractive } from "./terminalRunner";
 import { stopVelocityStack } from "./velocity/supervisor";
@@ -13,7 +14,8 @@ import { stopVelocityStack } from "./velocity/supervisor";
 export function activate(context: vscode.ExtensionContext): void {
   setExtensionPath(context.extensionPath);
   initChatHistory(context.globalState);
-  setVelocityStoragePath(context.globalStorageUri.fsPath);
+  setManagedPythonStoragePath(context.globalStorageUri.fsPath);
+  startCodegraphBackgroundIndexer(context);
 
   const provider = new RcChatViewProvider(context.extensionUri);
 

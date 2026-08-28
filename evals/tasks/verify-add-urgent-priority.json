@@ -1,0 +1,22 @@
+{
+  "id": "verify-add-urgent-priority",
+  "title": "New union member breaks an exhaustive switch",
+  "fixture": "ts-app",
+  "mode": "write",
+  "prompt": "Add a new priority level \"urgent\" that sorts above \"high\". Make sure it is accepted everywhere a priority is accepted.",
+  "graders": [
+    {
+      "type": "file_contains",
+      "file": "src/task.ts",
+      "text": "urgent"
+    },
+    {
+      "type": "file_contains",
+      "file": "src/validate.ts",
+      "text": "urgent"
+    },
+    {
+      "type": "compiles"
+    }
+  ]
+}

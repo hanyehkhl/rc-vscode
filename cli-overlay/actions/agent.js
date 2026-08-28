@@ -1,5 +1,6 @@
 import sendMessage, { beginGeneration, isGenerationStopped } from '../core/apiClient.js';
 import { SystemPrompt } from '../prompts/index.js';
+import { createPathContext } from '../tools/paths.js';
 import { executeToolCalls, formatToolActivityMessage, parseToolCalls } from '../tools/index.js';
 
 export function getChatSystemPrompt() {
@@ -59,9 +60,11 @@ function toolRoundLimitMessage(limit) {
     return `Stopped after ${limit} tool rounds. Type /continue to keep going.`;
 }
 
-export async function getAIResponse({ token, prompt, confirmTool, onToolMessage, thinkingEnabled = true, onChunk, searchEnabled = false, mode = 'normal', toolsEnabled = true, modelType = 'default', }) {
+export async function getAIResponse({ token, prompt, confirmTool, onToolMessage, onToolEvent, thinkingEnabled = true, onChunk, searchEnabled = false, mode = 'normal', toolsEnabled = true, modelType = 'default', cwd, }) {
     const signal = beginGeneration();
     const limit = maxToolRounds();
+    const pathContext = createPathContext(cwd);
+    let toolRoundLimitReached = false;
     const send = (nextPrompt) => sendMessage({
         token,
         prompt: nextPrompt,
@@ -71,52 +74,60 @@ export async function getAIResponse({ token, prompt, confirmTool, onToolMessage,
         onChunk,
     });
     let response = await send(prompt);
-    if (!toolsEnabled)
-        return response;
+    if (!toolsEnabled) {
+        return { ...response, toolRoundLimitReached: false };
+    }
     let toolRounds = 0;
     while (true) {
         if (response.stopped || isGenerationStopped())
-            return response;
+            return { ...response, toolRoundLimitReached };
         let toolCalls;
         try {
             toolCalls = parseToolCalls(response.content || '');
         }
         catch (error) {
             if (toolRounds >= limit) {
+                toolRoundLimitReached = true;
                 emitEvent('limit', { rounds: toolRounds, reason: 'parse' });
+                onToolEvent?.({ type: 'tool_limit', rounds: toolRounds, reason: 'parse' });
                 onToolMessage?.(toolRoundLimitMessage(limit));
-                return response;
+                return { ...response, toolRoundLimitReached: true };
             }
             toolRounds += 1;
             response = await send(`The tool call could not be parsed: ${error instanceof Error ? error.message : String(error)}. Send a corrected tool call or answer without a tool.`);
             continue;
         }
         if (toolCalls.length === 0)
-            return response;
+            return { ...response, toolRoundLimitReached };
         if (toolRounds >= limit) {
+            toolRoundLimitReached = true;
             emitEvent('limit', { rounds: toolRounds, reason: 'rounds' });
+            onToolEvent?.({ type: 'tool_limit', rounds: toolRounds, reason: 'rounds' });
             onToolMessage?.(toolRoundLimitMessage(limit));
-            return send('Maximum tool call rounds reached. Summarize what you finished and what remains. Do not use tools. Tell the user they can type /continue to keep working.');
+            response = await send('Maximum tool call rounds reached. Summarize what you finished and what remains. Do not use tools. Tell the user they can type /continue to keep working.');
+            return { ...response, toolRoundLimitReached: true };
         }
         toolRounds += 1;
         emitEvent('round', { round: toolRounds, calls: toolCalls.map((call) => call.name) });
         for (const call of toolCalls) {
-            emitEvent('tool_start', { name: call.name, path: callPath(call) || undefined });
+            const payload = { type: 'tool_start', name: call.name, path: callPath(call) || undefined };
+            emitEvent('tool_start', payload);
+            onToolEvent?.(payload);
         }
         onToolMessage?.(formatToolActivityMessage(response.content ?? '', toolCalls));
-        const results = await executeToolCalls(toolCalls, async (call) => (confirmTool ? confirmTool(call) : false), mode, signal);
+        const results = await executeToolCalls(toolCalls, async (call) => (confirmTool ? confirmTool(call) : false), mode, signal, pathContext);
         if (isGenerationStopped())
-            return response;
+            return { ...response, toolRoundLimitReached };
         results.forEach((result, index) => {
-            emitEvent('tool_result', {
+            const payload = {
+                type: 'tool_result',
                 name: result.tool_name,
                 ok: Boolean(result.ok),
                 error: result.ok ? undefined : String(result.error ?? ''),
                 bytes: result.ok ? String(result.result ?? '').length : 0,
-            });
-            // Report edits here, not from confirmTool: plan and yolo modes never
-            // call the confirmation hook, so tracking there misses every edit
-            // made in Agent (Full Access) — exactly where verification matters.
+            };
+            emitEvent('tool_result', payload);
+            onToolEvent?.(payload);
             const call = toolCalls[index];
             if (result.ok && call && EDIT_TOOLS.has(call.name)) {
                 const target = callPath(call);

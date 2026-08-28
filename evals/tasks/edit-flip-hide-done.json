@@ -1,0 +1,27 @@
+{
+  "id": "edit-flip-hide-done",
+  "title": "Change one literal, touch one file",
+  "fixture": "ts-app",
+  "mode": "write",
+  "editorContext": {
+    "file": "src/config.ts",
+    "languageId": "typescript"
+  },
+  "prompt": "Change the default config so completed tasks are hidden by default.",
+  "graders": [
+    {
+      "type": "file_matches",
+      "file": "src/config.ts",
+      "pattern": "hideDone:\\s*true"
+    },
+    {
+      "type": "compiles"
+    },
+    {
+      "type": "edited_files",
+      "files": [
+        "src/config.ts"
+      ]
+    }
+  ]
+}

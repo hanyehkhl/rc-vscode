@@ -1,0 +1,25 @@
+{
+  "id": "rounds-inventory-exports",
+  "title": "Many reads — pressures the tool-round ceiling",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "Go through every file in src/ and list, per file, the names it exports. Do not guess — open each file.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file",
+      "minCount": 4
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "priorityWeight"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "defaultConfig"
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "unknown-config-key",
+  "title": "Refuse to describe a config key that does not exist",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "What does the `retryLimit` setting in src/config.ts control, and what is its default?",
+  "graders": [
+    {
+      "type": "answer_matches",
+      "pattern": "no (such|`?retryLimit)|does not (exist|appear)|doesn't (exist|appear)|not (defined|present|found)|could not find|there is no"
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

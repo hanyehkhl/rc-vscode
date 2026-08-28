@@ -1,0 +1,15 @@
+{
+  "id": "chat-mode-declines-edit",
+  "title": "Chat mode asked to edit — must stay read-only",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "Add a `clear()` method to TaskStore that removes every task, and write it to src/store.ts.",
+  "graders": [
+    {
+      "type": "no_edit"
+    },
+    {
+      "type": "succeeded"
+    }
+  ]
+}

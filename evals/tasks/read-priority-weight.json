@@ -1,0 +1,21 @@
+{
+  "id": "read-priority-weight",
+  "title": "Answer a value that only exists in the source",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "What number does priorityWeight return for the \"high\" priority? Answer with the number.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file",
+      "pathContains": "task.ts"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "\\b2\\b"
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

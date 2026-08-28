@@ -1,0 +1,18 @@
+{
+  "name": "effort-hard",
+  "description": "--thinking-effort hard. Slower and more expensive per request.",
+  "grounding": true,
+  "editorContext": true,
+  "sessionMemory": true,
+  "autoContinue": true,
+  "maxContinues": 3,
+  "verifyEdits": true,
+  "maxVerifyRounds": 2,
+  "maxToolRounds": 14,
+  "thinkingEffort": "off",
+  "timeoutMs": 300000,
+  "checkTimeoutMs": 90000,
+  "taskDelayMs": 4000,
+  "retryDelayMs": 5000,
+  "thinkingEffort": "hard"
+}

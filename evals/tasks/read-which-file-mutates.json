@@ -1,0 +1,20 @@
+{
+  "id": "read-which-file-mutates",
+  "title": "Locate behaviour across files",
+  "fixture": "ts-app",
+  "mode": "ask",
+  "prompt": "Which single file is responsible for mutating Task objects? Name the file and say why.",
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "read_file"
+    },
+    {
+      "type": "answer_matches",
+      "pattern": "store\\.ts"
+    },
+    {
+      "type": "no_edit"
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { deleteSession, isInvalidTokenError } from '../../core-lib/index.js';
 import { getCurrentSessionId, setCurrentSessionId } from '../core/apiClient.js';
 import { getAIResponse, getChatSystemPrompt } from './agent.js';
 import { createToolGuard } from '../velocity/toolGuard.js';
+import { shutdownSandbox } from '../tools/sandbox.js';
 
 /** Tools that cannot change the workspace. Allowed even in read-only chat mode. */
 const READ_ONLY_TOOLS = new Set([
@@ -233,5 +234,11 @@ export async function runPlainPrompt({ prompt, thinking = false, thinkingEffort,
         }
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
+    }
+    finally {
+        // cli.js calls process.exit() straight after this returns, and an
+        // 'exit' handler cannot await. Tearing the microVM down here is the
+        // only point where the shutdown can actually be waited on.
+        await shutdownSandbox();
     }
 }
