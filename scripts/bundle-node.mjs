@@ -6,9 +6,8 @@ import {
   rmSync,
   copyFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { execFileSync } from "node:child_process";
 import { Readable } from "node:stream";
@@ -18,6 +17,7 @@ const VERSION = "v20.18.2";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const extRoot = join(__dirname, "..");
 const vendorNode = join(extRoot, "vendor", "node");
+const cacheDir = join(extRoot, "vendor", ".node-cache");
 
 const targets = [
   {
@@ -65,6 +65,24 @@ async function download(url, dest) {
   );
 }
 
+function resolveTarBinary() {
+  // Git Bash puts GNU tar first on PATH. That tar treats "C:\..." as
+  // host:path and fails. Prefer the Windows bsdtar when present.
+  if (process.platform === "win32") {
+    const systemTar = join(
+      process.env.SystemRoot || "C:\\Windows",
+      "System32",
+      "tar.exe"
+    );
+
+    if (existsSync(systemTar)) {
+      return systemTar;
+    }
+  }
+
+  return "tar";
+}
+
 function extractZipWindows(archivePath, work) {
   const command =
     `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' ` +
@@ -85,30 +103,51 @@ function extractZipWindows(archivePath, work) {
 }
 
 function extractTar(archivePath, work, member) {
-  // NOTE: "--force-local" is a GNU-tar-only flag. On Windows the built-in
-  // "tar.exe" is actually bsdtar (libarchive), which does not understand
-  // this flag and fails immediately. Since we only ever extract local
-  // archives (never remote host:path specs), it's safe to drop it entirely
-  // for both GNU tar and bsdtar.
+  // Keep archive + -C relative to cacheDir so GNU tar (Git Bash) never
+  // sees a drive-letter absolute path like C:\Users\...
+  const archiveRel = basename(archivePath);
+  const workRel = basename(work);
+
+  if (dirname(archivePath) !== cacheDir || dirname(work) !== cacheDir) {
+    throw new Error(
+      "extractTar expects archive and work directories under vendor/.node-cache"
+    );
+  }
+
+  const tarBin = resolveTarBinary();
+
+  console.log(`[bundle-node] tar binary: ${tarBin}`);
+  console.log(`[bundle-node] tar cwd: ${cacheDir}`);
+  console.log(`[bundle-node] tar archive: ${archiveRel}`);
+  console.log(`[bundle-node] tar work: ${workRel}`);
+
   execFileSync(
-    "tar",
+    tarBin,
     [
       "-xzf",
-      archivePath,
+      archiveRel,
       "-C",
-      work,
+      workRel,
       member,
     ],
     {
+      cwd: cacheDir,
       stdio: "inherit",
+      // Avoid inheriting MSYS path conversion surprises from Git Bash.
+      env: {
+        ...process.env,
+        MSYS_NO_PATHCONV: "1",
+        MSYS2_ARG_CONV_EXCL: "*",
+      },
     }
   );
 }
 
 function extractMember(archivePath, member, destFile) {
+  // Extract under cacheDir (not os.tmpdir) so tar can use relative paths.
   const work = join(
-    tmpdir(),
-    `rc-node-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    cacheDir,
+    `.extract-${Date.now()}-${Math.random().toString(16).slice(2)}`
   );
 
   mkdirSync(work, { recursive: true });
@@ -162,12 +201,6 @@ function extractMember(archivePath, member, destFile) {
     });
   }
 }
-
-const cacheDir = join(
-  extRoot,
-  "vendor",
-  ".node-cache"
-);
 
 mkdirSync(cacheDir, {
   recursive: true,

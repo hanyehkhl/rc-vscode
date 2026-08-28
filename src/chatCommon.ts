@@ -1,13 +1,43 @@
 import * as vscode from "vscode";
 import {
   abortPlainPrompt,
+  clearThreadSession,
   resolveCliJsPath,
   resolveDeepSeekToken,
-  runPlainPrompt,
   type ChatTurn,
+  type RcEvent,
   type ThinkingEffort,
   type UiAgentMode
 } from "./rcProcess";
+import { runAgentTurn } from "./agentRunner";
+import {
+  clearAllThreads,
+  deleteThread,
+  listThreads,
+  loadThread,
+  saveThread
+} from "./chatHistory";
+import { getVelocitySettings } from "./velocity/settings";
+import {
+  clearVelocityThread,
+  createThreadId,
+  runVelocityPrompt
+} from "./velocity";
+import {
+  recordTurn,
+  reportDaemonUnavailable,
+  resetAutoPilot,
+  setVelocityMode,
+  shouldUseVelocity,
+  takeArmNotice
+} from "./velocity/autoPilot";
+import {
+  abortPairMode,
+  isPairRunning,
+  queuePairUserMessage,
+  runPairLoop
+} from "./pairMode";
+import { DEFAULT_PAIR_ROUNDS } from "./prompts/pairMode";
 import {
   DEEPSEEK_TOKEN_COMMAND,
   DEEPSEEK_URL,
@@ -30,7 +60,10 @@ function isThinkingEffort(value: unknown): value is ThinkingEffort {
 export type ChatHost = {
   webview: vscode.Webview;
   close?: () => void;
+  threadId?: string;
 };
+
+let activeThreadId = createThreadId();
 
 export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const cssUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "chat.css"));
@@ -77,12 +110,26 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
           <span class="brand-mark">RC</span>
           <span class="thread-label" id="threadLabel">New chat</span>
         </div>
+        <button id="historyButton" class="icon-btn" title="Chat history" type="button" aria-label="Chat history">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 4v4l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
         <button id="newChatButton" class="icon-btn" title="New chat" type="button" aria-label="New chat">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </button>
       </header>
+
+      <div id="historyPanel" class="history-panel hidden">
+        <div class="history-head">
+          <span>Chat history</span>
+          <button id="historyClear" class="history-clear" type="button">Clear all</button>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </div>
 
       <div id="messages" class="messages">
         <div id="emptyState" class="empty-state">
@@ -125,6 +172,27 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
                 </div>
               </div>
               <button id="searchChip" class="chip-btn" type="button" title="/search">Search off</button>
+              <button id="pairChip" class="chip-btn" type="button" title="/pair">Pair off</button>
+              <div class="mode-menu">
+                <button id="velocityChip" class="chip-btn" type="button" title="/velocity">
+                  <span id="velocityLabel">Velocity auto</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
+                </button>
+                <div id="velocityDropdown" class="mode-dropdown hidden">
+                  <button type="button" class="velocity-option" data-velocity="off">
+                    <strong>Off</strong>
+                    <span>Never use the Velocity daemon</span>
+                  </button>
+                  <button type="button" class="velocity-option active" data-velocity="auto">
+                    <strong>Auto</strong>
+                    <span>Switch on by itself when a turn runs slow</span>
+                  </button>
+                  <button type="button" class="velocity-option" data-velocity="on">
+                    <strong>Always on</strong>
+                    <span>Route every turn through the daemon</span>
+                  </button>
+                </div>
+              </div>
               <div class="mode-menu">
                 <button id="thinkingChip" class="chip-btn" type="button" title="Thinking intensity">
                   <span id="thinkingLabel">Think off</span>
@@ -226,6 +294,48 @@ function postTokenSetup(
   });
 }
 
+/**
+ * Streamed text still contains `<tool_call>` markup mid-round. Strip it so the
+ * live preview shows the narration, not the machinery.
+ */
+function stripToolMarkup(text: string): string {
+  return text
+    .replace(/<tool_call\b[\s\S]*?<\/tool_call>/g, "")
+    .replace(/<tool_call\b[\s\S]*$/, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimStart();
+}
+
+/** One-line summary of a CLI event, for the tool timeline in the panel. */
+function describeEvent(event: RcEvent): string {
+  const name = typeof event.payload.name === "string" ? event.payload.name : "";
+  const target = typeof event.payload.path === "string" ? event.payload.path : "";
+
+  switch (event.name) {
+    case "tool_start":
+      return target ? `${name} · ${target}` : name;
+    case "tool_denied": {
+      const reason =
+        event.payload.reason === "read_only"
+          ? "chat mode is read-only"
+          : event.payload.reason === "guard"
+            ? "blocked by Velocity guard"
+            : "declined";
+      return `${name} — ${reason}`;
+    }
+    case "tool_result":
+      return event.payload.ok === false
+        ? `${name} failed: ${String(event.payload.error ?? "").slice(0, 200)}`
+        : "";
+    case "edited":
+      return target ? `edited ${target}` : "";
+    case "limit":
+      return "Tool-round limit reached — continuing…";
+    default:
+      return "";
+  }
+}
+
 export async function handleChatMessage(host: ChatHost, message: Record<string, unknown>): Promise<void> {
   const webview = host.webview;
   const type = typeof message.type === "string" ? message.type : "";
@@ -266,6 +376,38 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
     return;
   }
 
+  if (type === "historyList") {
+    void webview.postMessage({ type: "historyList", threads: listThreads() });
+    return;
+  }
+
+  if (type === "historyLoad" && typeof message.id === "string") {
+    void webview.postMessage({
+      type: "historyLoaded",
+      id: message.id,
+      turns: loadThread(message.id)
+    });
+    return;
+  }
+
+  if (type === "historySave" && typeof message.id === "string") {
+    const turns = Array.isArray(message.turns) ? (message.turns as ChatTurn[]) : [];
+    await saveThread(message.id, turns);
+    return;
+  }
+
+  if (type === "historyDelete" && typeof message.id === "string") {
+    await deleteThread(message.id);
+    void webview.postMessage({ type: "historyList", threads: listThreads() });
+    return;
+  }
+
+  if (type === "historyClear") {
+    await clearAllThreads();
+    void webview.postMessage({ type: "historyList", threads: listThreads() });
+    return;
+  }
+
   if (type === "listFiles") {
     const query = typeof message.query === "string" ? message.query : "";
     const entries = await listWorkspaceEntries(query);
@@ -273,8 +415,33 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
     return;
   }
 
+  if (type === "newChat") {
+    void clearVelocityThread(activeThreadId);
+    // Drop the server-side DeepSeek session too, so the next turn starts clean.
+    clearThreadSession(host.threadId || activeThreadId);
+    resetAutoPilot(host.threadId || activeThreadId);
+    activeThreadId = createThreadId();
+    return;
+  }
+
   if (type === "cancelPrompt") {
-    abortPlainPrompt();
+    if (isPairRunning()) {
+      abortPairMode();
+    } else {
+      abortPlainPrompt();
+    }
+    return;
+  }
+
+  if (type === "pairUserMessage" && typeof message.text === "string") {
+    const note = message.text.trim();
+    if (note && isPairRunning()) {
+      queuePairUserMessage(note);
+      void webview.postMessage({
+        type: "status",
+        text: "Note queued for next Writer/Reviewer turn…"
+      });
+    }
     return;
   }
 
@@ -300,13 +467,156 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
     : message.thinking
       ? "medium"
       : "off";
+  const pairMode = Boolean(message.pair);
+  const pairRounds =
+    typeof message.pairRounds === "number" && message.pairRounds > 0
+      ? Math.floor(message.pairRounds)
+      : DEFAULT_PAIR_ROUNDS;
+
+  // Auto mode: the daemon takes over once a turn has been measurably slow.
+  setVelocityMode(message.velocityMode);
+  const velocity = shouldUseVelocity(host.threadId || activeThreadId);
+  const armNotice = velocity ? takeArmNotice(host.threadId || activeThreadId) : "";
+  if (armNotice) {
+    void webview.postMessage({ type: "status", text: armNotice });
+  }
+
+  if (pairMode) {
+    void webview.postMessage({
+      type: "status",
+      text: `Pair mode · ${pairRounds} rounds…`
+    });
+
+    const result = await runPairLoop({
+      task: text,
+      rounds: pairRounds,
+      mode: "ask",
+      search,
+      thinkingEffort,
+      onStatus: (statusText) => {
+        void webview.postMessage({ type: "status", text: statusText });
+      },
+      onMessage: (role, roleText, round) => {
+        void webview.postMessage({
+          type: "assistant",
+          text: roleText,
+          role,
+          round,
+          pair: true,
+          keepBusy: true
+        });
+      }
+    });
+
+    if (result.cancelled) {
+      void webview.postMessage({ type: "cancelled" });
+      return;
+    }
+
+    if (!result.ok) {
+      const errorText = result.error || "Pair mode failed.";
+      if (isInvalidTokenOutput(errorText)) {
+        await clearDeepSeekToken();
+        postTokenSetup(webview, true, "expired");
+        return;
+      }
+      void webview.postMessage({ type: "error", text: errorText });
+      return;
+    }
+
+    void webview.postMessage({ type: "pairDone" });
+    return;
+  }
 
   void webview.postMessage({
     type: "status",
-    text: mode === "ask" ? "Thinking…" : "Working…"
+    text: velocity
+      ? mode === "ask"
+        ? "Velocity · thinking…"
+        : "Velocity · working…"
+      : mode === "ask"
+        ? "Thinking…"
+        : "Working…"
   });
 
-  const result = await runPlainPrompt(text, mode, history, { search, thinkingEffort });
+  const threadId = host.threadId || activeThreadId;
+  const turnStartedAt = Date.now();
+  let streamedText = "";
+
+  if (velocity) {
+    const velocityResult = await runVelocityPrompt(text, {
+      mode,
+      search,
+      thinkingEffort,
+      history,
+      threadId,
+      onStatus: (statusText) => {
+        void webview.postMessage({ type: "status", text: statusText });
+      },
+      onChunk: (chunk) => {
+        streamedText += chunk;
+        void webview.postMessage({ type: "assistantPartial", text: streamedText });
+      }
+    });
+
+    if (velocityResult.cancelled) {
+      void webview.postMessage({ type: "cancelled" });
+      return;
+    }
+
+    if (velocityResult.ok) {
+      void webview.postMessage({
+        type: "assistant",
+        text: velocityResult.stdout,
+        velocityFindings: velocityResult.findings
+      });
+      return;
+    }
+
+    if (velocityResult.stderr.includes("Falling back")) {
+      // The daemon is not reachable (usually no Python). Stop asking for it on
+      // every turn and say so once, then fall through to the standard path.
+      const notice = reportDaemonUnavailable(threadId);
+      if (notice) {
+        void webview.postMessage({ type: "status", text: notice });
+      }
+    } else {
+      const errorText = velocityResult.stderr || velocityResult.stdout || "Velocity failed.";
+      if (isInvalidTokenOutput(errorText)) {
+        await clearDeepSeekToken();
+        postTokenSetup(webview, true, "expired");
+        return;
+      }
+      void webview.postMessage({ type: "error", text: errorText });
+      return;
+    }
+  }
+
+  let previewText = "";
+
+  const result = await runAgentTurn(text, {
+    mode,
+    search,
+    thinkingEffort,
+    history,
+    threadId,
+    onStatus: (statusText) => {
+      void webview.postMessage({ type: "status", text: statusText });
+    },
+    onDelta: (delta) => {
+      previewText += delta;
+      void webview.postMessage({
+        type: "assistantPartial",
+        text: stripToolMarkup(previewText)
+      });
+    },
+    onEvent: (event) => {
+      const line = describeEvent(event);
+      if (line) {
+        void webview.postMessage({ type: "toolEvent", text: line });
+      }
+    }
+  });
 
   if (result.cancelled) {
     void webview.postMessage({ type: "cancelled" });
@@ -314,7 +624,18 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   if (result.ok) {
-    void webview.postMessage({ type: "assistant", text: result.stdout });
+    // Feeds Auto mode: a slow turn hands the next one to the daemon.
+    recordTurn(threadId, Date.now() - turnStartedAt);
+    const notice = takeArmNotice(threadId);
+    if (notice) {
+      void webview.postMessage({ type: "status", text: notice });
+    }
+    void webview.postMessage({
+      type: "assistant",
+      text: result.stdout,
+      // Still capped after auto-continue: offer the user a manual resume.
+      truncated: Boolean(result.limitReached)
+    });
     return;
   }
 
@@ -344,6 +665,10 @@ export function postStartupDiagnostics(webview: vscode.Webview): void {
   }
 
   void webview.postMessage({ type: "ready" });
+  void webview.postMessage({
+    type: "velocityDefaults",
+    mode: getVelocitySettings().mode
+  });
 }
 
 export async function promptAndSaveToken(): Promise<void> {

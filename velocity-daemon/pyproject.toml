@@ -1,0 +1,14 @@
+[project]
+name = "rc-velocity-daemon"
+version = "0.1.0"
+description = "Velocity daemon for RC VS Code extension"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.9.0",
+]
+
+[project.scripts]
+rc-velocity = "velocity.api.app:main"

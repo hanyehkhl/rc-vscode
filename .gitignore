@@ -11,3 +11,5 @@ out/
 *.pem
 .vscode/settings.json
 vendor/
+__pycache__/
+*.pyc

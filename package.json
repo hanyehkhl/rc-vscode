@@ -2,7 +2,7 @@
   "name": "rc-vscode",
   "displayName": "RC",
   "description": "Unofficial VS Code chat panel for RpCli (rc) by RezaParsian — maintained by hanyehkhl",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "hanyehkhl",
   "license": "MIT",
   "author": {
@@ -34,7 +34,10 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other", "AI"],
+  "categories": [
+    "Other",
+    "AI"
+  ],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -84,6 +87,10 @@
       {
         "command": "rc.generateCommitAll",
         "title": "RC: Generate Commit Message (All Changes)"
+      },
+      {
+        "command": "rc.initAgents",
+        "title": "RC: Initialize AGENTS.md"
       }
     ],
     "configuration": {
@@ -103,6 +110,101 @@
           "type": "string",
           "default": "",
           "description": "Optional override. Leave empty to use the Node.js binary bundled in the extension."
+        },
+        "rc.velocity.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Deprecated — use rc.velocity.mode. Only consulted when rc.velocity.mode is unset."
+        },
+        "rc.velocity.daemonPort": {
+          "type": "number",
+          "default": 8790,
+          "description": "Loopback port for the Velocity Python daemon."
+        },
+        "rc.velocity.servePort": {
+          "type": "number",
+          "default": 3001,
+          "description": "Loopback port for bundled rc serve."
+        },
+        "rc.velocity.stream": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stream tokens through Velocity when rc serve is available."
+        },
+        "rc.agent.editorContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send the active file, selection, diagnostics, and git status with each prompt so the agent can resolve references like \"this function\"."
+        },
+        "rc.agent.sessionMemory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reuse one DeepSeek session per chat thread instead of re-sending the transcript each turn."
+        },
+        "rc.agent.autoContinue": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically resume when the agent hits the tool-round ceiling mid-task."
+        },
+        "rc.agent.maxContinues": {
+          "type": "number",
+          "default": 3,
+          "description": "Maximum automatic continuations for a single turn."
+        },
+        "rc.agent.verifyEdits": {
+          "type": "boolean",
+          "default": true,
+          "description": "After the agent edits files, feed any resulting language-server errors back so it can fix them."
+        },
+        "rc.agent.maxVerifyRounds": {
+          "type": "number",
+          "default": 2,
+          "description": "Maximum self-repair rounds after an edit introduces errors."
+        },
+        "rc.agent.maxToolRounds": {
+          "type": "number",
+          "default": 14,
+          "description": "Tool rounds the agent may take before pausing (upstream default is 10)."
+        },
+        "rc.velocity.mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "auto",
+            "on"
+          ],
+          "enumDescriptions": [
+            "Never use the Velocity daemon.",
+            "Switch the daemon on by itself once a turn runs slow.",
+            "Route every turn through the daemon."
+          ],
+          "default": "auto",
+          "description": "When the Velocity daemon handles a turn. Auto engages it after a slow turn; the daemon then runs its own detectors (context bloat, wander, retry loops)."
+        },
+        "rc.velocity.autoTriggerSeconds": {
+          "type": "number",
+          "default": 25,
+          "description": "In Auto mode, a turn slower than this many seconds hands the rest of the chat to the daemon."
+        },
+        "rc.agent.runChecks": {
+          "type": "boolean",
+          "default": true,
+          "description": "After the agent edits files, run the project's type-checker and feed any failures back so it can fix them. Only non-mutating checks are auto-detected (npm run typecheck, tsc --noEmit, cargo check, go vet)."
+        },
+        "rc.agent.checkCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Command used to verify the agent's edits. Leave empty to auto-detect. Runs in the workspace root — use a check that does not write build output."
+        },
+        "rc.agent.checkTimeoutMs": {
+          "type": "number",
+          "default": 90000,
+          "description": "Timeout for the verification command, in milliseconds."
+        },
+        "rc.agent.grounding": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append anti-hallucination rules to the system prompt: never describe or edit code without reading it first, never invent APIs, match the surrounding style."
         }
       }
     }
@@ -114,10 +216,12 @@
     "vscode:prepublish": "npm run bundle-node && npm run prepare-cli && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "velocity:install": "py -3 -m pip install -r velocity-daemon/requirements.txt",
+    "velocity:check": "py -3 -c \"import sys; sys.path.insert(0, 'velocity-daemon'); from velocity.api.app import create_app; print('velocity ok')\""
   },
   "dependencies": {
-    "@rezaparsian/rp-cli": "^0.4.0"
+    "@rezaparsian/rp-cli": "^0.7.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

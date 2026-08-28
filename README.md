@@ -16,7 +16,8 @@ A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/
 
 - Codex-style chat UI
 - Modes: Chat · Agent · Agent (Full Access)
-- `@` file mentions, `/search`, `/thinking`, `/token`
+- `@` file mentions, `/search`, `/thinking`, `/velocity`, `/token`
+- **Velocity mode** — faster, more focused agent (Python daemon + session reuse + tool guard)
 - Token setup and re-auth when the DeepSeek token expires
 
 ## Requirements
@@ -25,6 +26,8 @@ A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/
 
 Node.js **and** the `rc` CLI are bundled inside the extension.  
 You do **not** need to install Node, npm, or RpCli on the machine.
+
+**Velocity mode** additionally needs **Python 3.11+** on the machine (or `py -3` on Windows). The extension starts the bundled daemon automatically when Velocity is enabled.
 
 ## Develop
 

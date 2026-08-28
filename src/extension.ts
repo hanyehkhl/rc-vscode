@@ -3,11 +3,17 @@ import { openChatPanel } from "./chatPanel";
 import { promptAndSaveToken } from "./chatCommon";
 import { RcChatViewProvider } from "./chatViewProvider";
 import { generateCommit } from "./commitCommand";
+import { initAgentsFile } from "./agentsInit";
+import { initChatHistory } from "./chatHistory";
+import { setVelocityStoragePath } from "./velocity/pythonEnv";
 import { setExtensionPath } from "./rcProcess";
 import { runRcInteractive } from "./terminalRunner";
+import { stopVelocityStack } from "./velocity/supervisor";
 
 export function activate(context: vscode.ExtensionContext): void {
   setExtensionPath(context.extensionPath);
+  initChatHistory(context.globalState);
+  setVelocityStoragePath(context.globalStorageUri.fsPath);
 
   const provider = new RcChatViewProvider(context.extensionUri);
 
@@ -36,8 +42,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("rc.generateCommitAll", () => {
       generateCommit(true);
+    }),
+    vscode.commands.registerCommand("rc.initAgents", () => {
+      void initAgentsFile();
     })
   );
 }
 
-export function deactivate(): void {}
+export function deactivate(): void {
+  void stopVelocityStack();
+}

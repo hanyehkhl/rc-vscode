@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
@@ -64,6 +64,29 @@ function patchChatJs(chatJsPath) {
   console.log(`[prepare-cli] Patched thinking effort into ${chatJsPath}`);
 }
 
+function clearVendorRoot(target) {
+  if (!existsSync(target)) {
+    return;
+  }
+
+  try {
+    rmSync(target, { recursive: true, force: true });
+    return;
+  } catch (error) {
+    // Windows often locks vendor/rp-cli while the extension host is running.
+    const backup = `${target}.old-${Date.now()}`;
+    try {
+      renameSync(target, backup);
+      console.warn(`[prepare-cli] vendor locked; moved aside to ${backup}`);
+      return;
+    } catch {
+      console.warn(
+        `[prepare-cli] Could not clear ${target} (${error instanceof Error ? error.message : String(error)}). Overwriting in place.`
+      );
+    }
+  }
+}
+
 const pkgRoot = resolvePackageRoot();
 if (!pkgRoot) {
   console.error("[prepare-cli] Missing @rezaparsian/rp-cli. Run: npm install --legacy-peer-deps");
@@ -71,7 +94,9 @@ if (!pkgRoot) {
 }
 
 const overlayCli = join(extRoot, "cli-overlay", "cli.js");
-const overlayPlain = join(extRoot, "cli-overlay", "actions", "plainPrompt.js");
+const overlayActions = join(extRoot, "cli-overlay", "actions");
+const overlayPlain = join(overlayActions, "plainPrompt.js");
+const overlayVelocity = join(extRoot, "cli-overlay", "velocity");
 if (!existsSync(overlayCli) || !existsSync(overlayPlain)) {
   console.error("[prepare-cli] cli-overlay files are missing.");
   process.exit(1);
@@ -81,11 +106,14 @@ if (!existsSync(overlayCli) || !existsSync(overlayPlain)) {
 const targetActions = join(pkgRoot, "dist", "source", "actions");
 mkdirSync(targetActions, { recursive: true });
 cpSync(overlayCli, join(pkgRoot, "dist", "source", "cli.js"));
-cpSync(overlayPlain, join(targetActions, "plainPrompt.js"));
+cpSync(overlayActions, targetActions, { recursive: true });
+if (existsSync(overlayVelocity)) {
+  cpSync(overlayVelocity, join(pkgRoot, "dist", "source", "velocity"), { recursive: true });
+}
 patchChatJs(join(pkgRoot, "dist", "core-lib", "Chat.js"));
 
 // Build a self-contained vendor copy for the VSIX (works on any machine)
-rmSync(vendorRoot, { recursive: true, force: true });
+clearVendorRoot(vendorRoot);
 mkdirSync(vendorRoot, { recursive: true });
 
 const pkgJson = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
@@ -109,7 +137,11 @@ cpSync(join(pkgRoot, "dist"), join(vendorRoot, "dist"), { recursive: true });
 // Ensure overlay is present in vendor too
 mkdirSync(join(vendorRoot, "dist", "source", "actions"), { recursive: true });
 cpSync(overlayCli, join(vendorRoot, "dist", "source", "cli.js"));
-cpSync(overlayPlain, join(vendorRoot, "dist", "source", "actions", "plainPrompt.js"));
+cpSync(overlayActions, join(vendorRoot, "dist", "source", "actions"), { recursive: true });
+if (existsSync(overlayVelocity)) {
+  cpSync(overlayVelocity, join(vendorRoot, "dist", "source", "velocity"), { recursive: true });
+}
+patchChatJs(join(vendorRoot, "dist", "core-lib", "Chat.js"));
 
 console.log("[prepare-cli] Installing production deps into vendor/rp-cli ...");
 execSync("npm install --omit=dev --legacy-peer-deps", {

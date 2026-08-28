@@ -363,18 +363,56 @@ export function expandAtMentions(prompt: string, cwd: string | undefined): strin
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
+/**
+ * Character budget for the replayed transcript. Slicing by turn count alone is
+ * meaningless — eight turns can be 200 characters or 200 KiB — and an
+ * unbounded transcript pushes the real question out of the model's attention.
+ */
+const HISTORY_CHAR_BUDGET = 12000;
+const TURN_CHAR_LIMIT = 3000;
+
 export function buildPromptWithHistory(prompt: string, history: ChatTurn[]): string {
   if (history.length === 0) {
     return prompt;
   }
 
-  const lines = ["Previous conversation:"];
-  for (const turn of history.slice(-8)) {
-    lines.push(`${turn.role === "user" ? "User" : "Assistant"}: ${turn.content}`);
+  const kept: string[] = [];
+  let used = 0;
+  let dropped = 0;
+
+  // Walk backwards: recent turns matter most and get the budget first.
+  for (let i = history.length - 1; i >= 0; i--) {
+    const turn = history[i];
+    const label = turn.role === "user" ? "User" : "Assistant";
+    let content = turn.content ?? "";
+    if (content.length > TURN_CHAR_LIMIT) {
+      content = `${content.slice(0, TURN_CHAR_LIMIT)}… [truncated]`;
+    }
+    const line = `${label}: ${content}`;
+    if (used + line.length > HISTORY_CHAR_BUDGET) {
+      dropped = i + 1;
+      break;
+    }
+    kept.unshift(line);
+    used += line.length;
   }
-  lines.push("", "Current user message:", prompt);
+
+  if (kept.length === 0) {
+    return prompt;
+  }
+
+  const lines = ["Previous conversation:"];
+  if (dropped > 0) {
+    lines.push(`[${dropped} earlier message(s) omitted]`);
+  }
+  lines.push(...kept, "", "Current user message:", prompt);
   return lines.join("\n");
 }
+
+export type RcEvent = {
+  name: string;
+  payload: Record<string, unknown>;
+};
 
 export type PlainPromptResult = {
   ok: boolean;
@@ -383,7 +421,75 @@ export type PlainPromptResult = {
   stderr: string;
   code: number | null;
   cliJs?: string;
+  /** DeepSeek session to resume on the next turn, when session reuse is on. */
+  sessionId?: string;
+  /** Workspace-relative paths the agent wrote to. Drives the verify loop. */
+  editedPaths?: string[];
+  /** True when the agent stopped because it hit the tool-round ceiling. */
+  limitReached?: boolean;
 };
+
+export type PlainPromptOptions = {
+  search?: boolean;
+  thinking?: boolean;
+  thinkingEffort?: ThinkingEffort;
+  /** Resume this DeepSeek session instead of replaying the transcript. */
+  sessionId?: string;
+  /** Keep the session alive server-side so the next turn can resume it. */
+  keepSession?: boolean;
+  /** Extra block (editor context, verify feedback) prepended to the prompt. */
+  contextBlock?: string;
+  maxToolRounds?: number;
+  /** Append the anti-hallucination grounding rules to the system prompt. */
+  grounding?: boolean;
+  onDelta?: (text: string) => void;
+  onEvent?: (event: RcEvent) => void;
+};
+
+/** Per-thread DeepSeek session ids, so a conversation keeps real server memory. */
+const threadSessions = new Map<string, string>();
+
+export function getThreadSession(threadId: string): string | undefined {
+  return threadSessions.get(threadId);
+}
+
+export function setThreadSession(threadId: string, sessionId: string): void {
+  if (sessionId) {
+    threadSessions.set(threadId, sessionId);
+  }
+}
+
+/**
+ * Forget a thread's session and delete it server-side, so starting a new chat
+ * does not leave sessions piling up on the user's DeepSeek account.
+ */
+export function clearThreadSession(threadId: string): void {
+  const sessionId = threadSessions.get(threadId);
+  threadSessions.delete(threadId);
+  if (!sessionId) {
+    return;
+  }
+
+  const token = resolveDeepSeekToken();
+  const cliJs = resolveCliJsPath();
+  const nodePath = resolveNodePath();
+  if (!token || !cliJs || !nodePath) {
+    return;
+  }
+
+  try {
+    const child = spawn(nodePath, [cliJs, "--delete-session", sessionId], {
+      env: { ...process.env, PATH: nodeSearchPath(), DEEPSEEK_TOKEN: token },
+      windowsHide: true,
+      stdio: "ignore",
+      detached: false
+    });
+    child.on("error", () => undefined);
+    child.unref?.();
+  } catch {
+    // Cleanup is best-effort; never block the UI on it.
+  }
+}
 
 type PromptSession = {
   child: ChildProcess;
@@ -440,8 +546,19 @@ function killChildProcess(child: ChildProcess): void {
   }
 }
 
+/**
+ * Bumped on every cancellation. Multi-step turns (continue / verify) capture it
+ * and bail out, so Stop also stops the steps that have not been spawned yet.
+ */
+let abortEpoch = 0;
+
+export function getAbortEpoch(): number {
+  return abortEpoch;
+}
+
 /** Stop the in-flight `rc --plain` run, if any. */
 export function abortPlainPrompt(): boolean {
+  abortEpoch++;
   const session = currentSession;
   if (!session) {
     return false;
@@ -455,7 +572,7 @@ export function runPlainPrompt(
   prompt: string,
   mode: UiAgentMode = "write",
   history: ChatTurn[] = [],
-  options: { search?: boolean; thinking?: boolean; thinkingEffort?: ThinkingEffort } = {}
+  options: PlainPromptOptions = {}
 ): Promise<PlainPromptResult> {
   const token = resolveDeepSeekToken();
   if (!token) {
@@ -492,24 +609,47 @@ export function runPlainPrompt(
 
   const cwd = getWorkspaceCwd() || os.homedir();
   const expanded = expandAtMentions(prompt, getWorkspaceCwd());
-  const fullPrompt = buildPromptWithHistory(expanded, history);
-  const env = {
+
+  // A resumed session already holds the conversation server-side, so replaying
+  // the transcript would only duplicate it.
+  const withHistory = options.sessionId
+    ? expanded
+    : buildPromptWithHistory(expanded, history);
+  const fullPrompt = options.contextBlock
+    ? `${options.contextBlock}\n\n---\n\n${withHistory}`
+    : withHistory;
+
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: nodeSearchPath(),
-    DEEPSEEK_TOKEN: token
+    DEEPSEEK_TOKEN: token,
+    RC_EVENTS: "1"
   };
+  if (options.sessionId) {
+    env.RC_SESSION_ID = options.sessionId;
+  }
+  if (options.keepSession) {
+    env.RC_KEEP_SESSION = "1";
+  }
+  if (options.maxToolRounds && options.maxToolRounds > 0) {
+    env.RC_MAX_TOOL_ROUNDS = String(options.maxToolRounds);
+  }
+  if (options.grounding === false) {
+    env.RC_GROUNDING = "0";
+  }
 
   const thinkingEffort: ThinkingEffort =
     options.thinkingEffort || (options.thinking ? "medium" : "off");
 
-  const args = [cliJs, "--plain", "--mode", uiModeToCliMode(mode)];
+  // The prompt goes over stdin: argv is capped near 32 KiB on Windows, which a
+  // prompt carrying editor context plus history clears easily.
+  const args = [cliJs, "--plain", "--stdin", "--mode", uiModeToCliMode(mode)];
   if (options.search) {
     args.push("--search");
   }
   if (thinkingEffort !== "off") {
     args.push("--thinking-effort", thinkingEffort);
   }
-  args.push(fullPrompt);
 
   return new Promise((resolve) => {
     if (currentSession) {
@@ -528,7 +668,11 @@ export function runPlainPrompt(
 
     let stdout = "";
     let stderr = "";
+    let stderrTail = "";
     let settled = false;
+    let sessionId = "";
+    let limitReached = false;
+    const editedPaths: string[] = [];
 
     const finish = (result: PlainPromptResult) => {
       if (settled) {
@@ -541,11 +685,54 @@ export function runPlainPrompt(
       resolve(result);
     };
 
+    /** Structured `RC_EVENT <name> <json>` lines emitted by the CLI overlay. */
+    const handleEventLine = (line: string) => {
+      const match = /^RC_EVENT (\S+) (.*)$/.exec(line);
+      if (!match) {
+        return false;
+      }
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(match[2]) as Record<string, unknown>;
+      } catch {
+        payload = {};
+      }
+
+      const name = match[1];
+      if (name === "delta") {
+        const text = typeof payload.t === "string" ? payload.t : "";
+        if (text) {
+          options.onDelta?.(text);
+        }
+      } else if (name === "session" && typeof payload.id === "string") {
+        sessionId = payload.id;
+      } else if (name === "edited" && typeof payload.path === "string") {
+        editedPaths.push(payload.path);
+      } else if (name === "limit") {
+        limitReached = true;
+      }
+
+      options.onEvent?.({ name, payload });
+      return true;
+    };
+
+    child.stdin?.on("error", () => {
+      // The child may exit before the prompt is fully written; close() reports it.
+    });
+    child.stdin?.end(fullPrompt, "utf8");
+
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+      stderrTail += chunk.toString("utf8");
+      const lines = stderrTail.split(/\r?\n/);
+      stderrTail = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!handleEventLine(line)) {
+          stderr += `${line}\n`;
+        }
+      }
     });
     child.on("error", (error) => {
       finish({
@@ -560,13 +747,19 @@ export function runPlainPrompt(
       });
     });
     child.on("close", (code) => {
+      if (stderrTail && !handleEventLine(stderrTail)) {
+        stderr += stderrTail;
+      }
       finish({
         ok: !session.aborted && code === 0 && Boolean(stdout.trim()),
         cancelled: session.aborted,
         stdout: stdout.trim(),
         stderr: stderr.trim(),
         code,
-        cliJs
+        cliJs,
+        sessionId,
+        editedPaths,
+        limitReached
       });
     });
   });
