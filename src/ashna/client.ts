@@ -63,6 +63,21 @@ export class AshnaApiError extends Error {
   }
 }
 
+/** Identify this client honestly to the API (name/version + project URL). */
+function userAgent(): string {
+  let version = "0.0.0";
+  try {
+    // out/ashna/client.js → ../../package.json
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    version = String((require("../../package.json") as { version?: unknown }).version ?? version);
+  } catch {
+    // keep the fallback version
+  }
+  return `rc-vscode/${version} (+https://github.com/hanyehkhl/rc-vscode)`;
+}
+
+const USER_AGENT = userAgent();
+
 type ClientOptions = {
   baseUrl: string;
   apiKey: string;
@@ -82,7 +97,7 @@ function friendlyStatusMessage(status: number, serverMessage: string): string {
   const detail = serverMessage ? ` (${serverMessage})` : "";
   switch (status) {
     case 401:
-      return `Ashna rejected the API key${detail}. Set a new key with /ashna-key.`;
+      return `Ashna rejected the API key${detail}. Set a new key with /ashna.`;
     case 403:
       return `This API key is not allowed to use that model or agent${detail}. Check your Ashna plan, or pick another model.`;
     case 404:
@@ -184,7 +199,8 @@ export class AshnaClient {
     return {
       Authorization: `Bearer ${this.options.apiKey}`,
       "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream"
+      Accept: "application/json, text/event-stream",
+      "User-Agent": USER_AGENT
     };
   }
 

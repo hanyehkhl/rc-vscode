@@ -1,15 +1,17 @@
 # RC for VS Code
 
-A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/RpCli) (RpCli).
+A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/RpCli) (RpCli), with an optional [AshnaAI](https://www.ashna.ai/api-docs) API provider.
 
 > **Not an official RezaParsian product.**  
 > This extension is maintained by [hanyehkhl](https://github.com/hanyehkhl).  
 > It is a separate project that **uses / integrates** [RpCli](https://github.com/RezaParsian/RpCli) (MIT).  
+> **Not affiliated with AshnaAI.** The optional Ashna provider is an independent client of AshnaAI's public API; "AshnaAI" is a trademark of its owner.  
 > Full attribution: see [`NOTICE.md`](./NOTICE.md) and [`LICENSE`](./LICENSE).
 
 ## Credits
 
 - **Upstream CLI:** [RezaParsian/RpCli](https://github.com/RezaParsian/RpCli) — thank you to the original author.
+- **Optional provider:** [AshnaAI API](https://www.ashna.ai/api-docs) — third-party service, used with your own API key under [AshnaAI's Terms of Service](https://www.ashna.ai/service-terms). Your key is personal: do not share it.
 - **This extension:** [hanyehkhl/rc-vscode](https://github.com/hanyehkhl/rc-vscode)
 
 ## Features
@@ -19,10 +21,12 @@ A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/
 - `@` file mentions, `/search`, `/thinking`, `/velocity`, `/token`
 - **Velocity mode** — faster, more focused agent (Python daemon + session reuse + tool guard)
 - Token setup and re-auth when the DeepSeek token expires
+- **Ashna provider (optional)** — switch the header chip from RC to Ashna, paste your AshnaAI API key (stored in the OS keychain), pick a model for Agent modes and, optionally, your custom Ashna agent for Chat mode
 
 ## Requirements
 
-- A DeepSeek token (`/token` or **RC: Set DeepSeek Token**)
+- **RC provider:** a DeepSeek token (`/token` or **RC: Set DeepSeek Token**)
+- **Ashna provider:** an AshnaAI API key from app.ashna.ai → Account → API (`/ashna` or **RC: Set Ashna API Key**). Usage is billed to your AshnaAI account.
 
 Node.js **and** the `rc` CLI are bundled inside the extension.  
 You do **not** need to install Node, npm, or RpCli on the machine.

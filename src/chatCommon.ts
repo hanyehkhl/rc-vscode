@@ -139,6 +139,7 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
           <button id="ashnaSaveButton" type="button" class="btn-primary">Save &amp; connect</button>
         </div>
         <p id="ashnaSetupStatus" class="token-setup-status"></p>
+        <p class="token-path">AshnaAI is a third-party service, not affiliated with this extension. Your API key is personal — do not share it. Usage is billed to your AshnaAI account under AshnaAI's Terms of Service (ashna.ai/service-terms).</p>
       </div>
     </div>
 
