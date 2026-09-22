@@ -15,3 +15,10 @@ vendor/.node-cache/**
 !README.md
 !PUBLISHING.md
 !package.json
+**/__pycache__/**
+**/*.pyc
+evals/**
+docs/**
+BUILD.md
+*.vsix
+vendor/rp-cli.old-*/**

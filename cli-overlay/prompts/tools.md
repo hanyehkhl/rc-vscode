@@ -48,7 +48,7 @@ You may include MULTIPLE `<tool_call>` blocks in a single response, one after an
 - `list_directory` is not recursive.
 - **`search_code`** is the primary way to find code by symbol, function name, or concept. It uses a code graph and returns up to 30 hits as `path:line:snippet`. While the graph index is building it falls back to substring results automatically.
 - **`search_files`** is literal substring grep only (`line.includes`). Use it when you know the exact text to match, not for "where is the retry logic". Returns up to 50 lines.
-- `read_file` is UTF-8 only, maximum 100 KiB.
+- `read_file` is UTF-8 only. Files over 100 KiB must be read in line ranges with `start_line` / `end_line`.
 - `run_command` for shell work in the working directory. {{elevationHint}}
 
 ## edit_file rules

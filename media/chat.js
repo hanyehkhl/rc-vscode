@@ -19,7 +19,9 @@ const SLASH_COMMANDS = [
   { name: "/thinking", description: "Cycle thinking: off, low, medium, hard" },
   { name: "/pair", description: "Toggle Writer ↔ Reviewer pair mode" },
   { name: "/velocity", description: "Cycle Velocity: off / auto / on" },
-  { name: "/token", description: "Set DeepSeek token" },
+  { name: "/token", description: "Set DeepSeek token (RC) or Ashna key (Ashna)" },
+  { name: "/ashna", description: "Ashna settings: API key, model, agent id" },
+  { name: "/provider", description: "Switch provider: RC ↔ Ashna" },
   { name: "/exit", description: "Close panel" },
   { name: "/quit", description: "Close panel" }
 ];
@@ -64,6 +66,27 @@ const tokenCommand = document.getElementById("tokenCommand");
 const tokenPath = document.getElementById("tokenPath");
 const tokenSetupTitle = document.getElementById("tokenSetupTitle");
 const tokenLead = document.getElementById("tokenLead");
+const providerChip = document.getElementById("providerChip");
+const providerLabel = document.getElementById("providerLabel");
+const providerDropdown = document.getElementById("providerDropdown");
+const providerAshnaDetail = document.getElementById("providerAshnaDetail");
+const providerAshnaSettings = document.getElementById("providerAshnaSettings");
+const useAshnaButton = document.getElementById("useAshnaButton");
+const ashnaSetup = document.getElementById("ashnaSetup");
+const ashnaSetupTitle = document.getElementById("ashnaSetupTitle");
+const ashnaLead = document.getElementById("ashnaLead");
+const ashnaKeyInput = document.getElementById("ashnaKeyInput");
+const ashnaModelInput = document.getElementById("ashnaModelInput");
+const ashnaModelList = document.getElementById("ashnaModelList");
+const ashnaAgentInput = document.getElementById("ashnaAgentInput");
+const ashnaKeysButton = document.getElementById("ashnaKeysButton");
+const ashnaCancelButton = document.getElementById("ashnaCancelButton");
+const ashnaSaveButton = document.getElementById("ashnaSaveButton");
+const ashnaSetupStatus = document.getElementById("ashnaSetupStatus");
+
+/** Provider state mirrors the extension's rc.provider setting (source of truth). */
+let provider = "rc";
+let ashnaState = { model: "", agentId: "", hasKey: false };
 
 let modeIndex = 1;
 let searchEnabled = false;
@@ -154,6 +177,115 @@ function updateChrome() {
   });
   document.querySelectorAll(".thinking-option").forEach((el) => {
     el.classList.toggle("active", el.getAttribute("data-thinking") === thinkingEffort);
+  });
+  updateProviderChrome();
+}
+
+function isAshna() {
+  return provider === "ashna";
+}
+
+function idleHint() {
+  if (isAshna()) {
+    return "Ashna · " + (currentMode().id === "ask" && ashnaState.agentId ? "agent " + ashnaState.agentId : ashnaState.model || "model");
+  }
+  return velocityMode !== "off" ? "Velocity " + velocityMode : "Local · TAB changes mode";
+}
+
+function setHidden(element, hidden) {
+  if (element) element.classList.toggle("hidden", hidden);
+}
+
+function updateProviderChrome() {
+  const ashna = isAshna();
+  if (providerLabel) {
+    providerLabel.textContent = ashna ? "Ashna" : "RC";
+  }
+  if (providerChip) {
+    providerChip.classList.toggle("ashna", ashna);
+    providerChip.title = ashna
+      ? "Ashna · model " + (ashnaState.model || "?") + (ashnaState.agentId ? " · agent " + ashnaState.agentId : "")
+      : "RC · DeepSeek";
+  }
+  if (providerAshnaDetail) {
+    providerAshnaDetail.textContent = ashnaState.hasKey
+      ? "Model " + (ashnaState.model || "?") + (ashnaState.agentId ? " · agent " + ashnaState.agentId : "")
+      : "Needs an Ashna API key";
+  }
+  document.querySelectorAll(".provider-option[data-provider]").forEach((el) => {
+    el.classList.toggle("active", el.getAttribute("data-provider") === provider);
+  });
+  // RC-only features have no Ashna equivalent; hide them instead of letting them silently no-op.
+  setHidden(searchChip, ashna);
+  setHidden(pairChip, ashna);
+  setHidden(velocityChip ? velocityChip.parentElement : null, ashna);
+  setHidden(thinkingChip ? thinkingChip.parentElement : null, ashna);
+  if (tokenChip) {
+    tokenChip.textContent = ashna ? "Ashna settings" : "Update token";
+    tokenChip.title = ashna ? "/ashna" : "/token";
+  }
+  if (!busy) {
+    statusHint.textContent = idleHint();
+  }
+}
+
+function setProvider(next) {
+  if (next !== "rc" && next !== "ashna") return;
+  if (providerDropdown) providerDropdown.classList.add("hidden");
+  vscode.postMessage({ type: "setProvider", provider: next });
+}
+
+function requestCredentialSetup() {
+  if (isAshna()) {
+    vscode.postMessage({ type: "requestAshnaSetup" });
+  } else {
+    vscode.postMessage({ type: "requestTokenSetup", reason: "missing" });
+  }
+}
+
+function showAshnaSetup(message) {
+  const reason = message.reason || "missing";
+  if (ashnaSetupTitle) {
+    ashnaSetupTitle.textContent =
+      reason === "invalid" ? "Ashna key rejected" : reason === "edit" ? "Ashna settings" : "Connect Ashna";
+  }
+  if (ashnaLead) {
+    ashnaLead.textContent =
+      reason === "invalid"
+        ? "Ashna did not accept the saved API key. Paste a new one below."
+        : "Use your Ashna API key to chat with Ashna models or your own Ashna agent.";
+  }
+  if (ashnaKeyInput) {
+    ashnaKeyInput.value = "";
+    ashnaKeyInput.placeholder = message.hasKey ? "Saved — leave empty to keep it" : "Paste Ashna API key";
+  }
+  if (ashnaModelInput) ashnaModelInput.value = message.model || "";
+  if (ashnaAgentInput) ashnaAgentInput.value = message.agentId || "";
+  if (ashnaSetupStatus) {
+    ashnaSetupStatus.textContent = message.error || "";
+    ashnaSetupStatus.className = "token-setup-status" + (message.error ? " err" : "");
+  }
+  tokenSetup.classList.add("hidden");
+  chatApp.classList.add("hidden");
+  ashnaSetup.classList.remove("hidden");
+  (message.hasKey ? ashnaModelInput : ashnaKeyInput).focus();
+}
+
+function saveAshnaSetup() {
+  const apiKey = (ashnaKeyInput.value || "").trim();
+  if (!apiKey && !ashnaState.hasKey) {
+    ashnaSetupStatus.textContent = "Paste your Ashna API key first.";
+    ashnaSetupStatus.className = "token-setup-status err";
+    return;
+  }
+  ashnaSetupStatus.textContent = "Checking key…";
+  ashnaSetupStatus.className = "token-setup-status";
+  ashnaSaveButton.disabled = true;
+  vscode.postMessage({
+    type: "saveAshnaConfig",
+    apiKey: apiKey,
+    model: (ashnaModelInput.value || "").trim(),
+    agentId: (ashnaAgentInput.value || "").trim()
   });
 }
 
@@ -650,6 +782,7 @@ function showTokenSetup(message) {
     tokenSetupStatus.className = "token-setup-status";
   }
   if (tokenInput) tokenInput.value = "";
+  ashnaSetup.classList.add("hidden");
   tokenSetup.classList.remove("hidden");
   chatApp.classList.add("hidden");
   tokenInput.focus();
@@ -657,6 +790,7 @@ function showTokenSetup(message) {
 
 function showChatApp() {
   tokenSetup.classList.add("hidden");
+  ashnaSetup.classList.add("hidden");
   chatApp.classList.remove("hidden");
   input.focus();
 }
@@ -691,13 +825,14 @@ function resetChat() {
   clearToolTrail();
   clearStatus();
   showEmpty();
+  const previousThreadId = threadId;
   threadId = "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
   toggleHistoryPanel(false);
   threadLabel.textContent = "New chat";
-  statusHint.textContent = velocityMode !== "off" ? "Velocity " + velocityMode : "Local · TAB changes mode";
+  statusHint.textContent = idleHint();
   input.value = "";
   hidePicker();
-  vscode.postMessage({ type: "newChat" });
+  vscode.postMessage({ type: "newChat", previousThreadId: previousThreadId });
   input.focus();
 }
 
@@ -790,7 +925,19 @@ function runSlashOrSend() {
   if (command === "/token") {
     input.value = "";
     hidePicker();
-    vscode.postMessage({ type: "requestTokenSetup", reason: "missing" });
+    requestCredentialSetup();
+    return;
+  }
+  if (command === "/ashna") {
+    input.value = "";
+    hidePicker();
+    vscode.postMessage({ type: "requestAshnaSetup" });
+    return;
+  }
+  if (command === "/provider") {
+    input.value = "";
+    hidePicker();
+    setProvider(isAshna() ? "rc" : "ashna");
     return;
   }
   if (command === "/exit" || command === "/quit") {
@@ -837,7 +984,9 @@ function sendPrompt(preset) {
   emptyCtrlC = false;
   ignoreNextResult = false;
   setBusy(true, { pair: pairEnabled });
-  statusHint.textContent = pairEnabled
+  statusHint.textContent = isAshna()
+    ? "Ashna · " + (currentMode().id === "ask" ? "thinking…" : "working…")
+    : pairEnabled
     ? "Pair mode · " + pairRounds + " rounds…"
     : velocityMode === "on"
       ? currentMode().id === "ask"
@@ -857,6 +1006,7 @@ function sendPrompt(preset) {
     pair: pairEnabled,
     pairRounds: pairRounds,
     velocityMode: velocityMode,
+    threadId: threadId,
     history: historyPayload
   });
 }
@@ -889,6 +1039,7 @@ document.querySelectorAll(".mode-option").forEach((el) => {
 });
 
 document.addEventListener("click", () => {
+  if (providerDropdown) providerDropdown.classList.add("hidden");
   modeDropdown.classList.add("hidden");
   thinkingDropdown.classList.add("hidden");
   if (velocityDropdown) velocityDropdown.classList.add("hidden");
@@ -937,7 +1088,48 @@ document.querySelectorAll(".thinking-option").forEach((el) => {
 });
 
 tokenChip.addEventListener("click", () => {
-  vscode.postMessage({ type: "requestTokenSetup", reason: "missing" });
+  requestCredentialSetup();
+});
+
+if (providerChip) {
+  providerChip.addEventListener("click", (event) => {
+    event.stopPropagation();
+    modeDropdown.classList.add("hidden");
+    thinkingDropdown.classList.add("hidden");
+    if (velocityDropdown) velocityDropdown.classList.add("hidden");
+    providerDropdown.classList.toggle("hidden");
+  });
+}
+
+document.querySelectorAll(".provider-option[data-provider]").forEach((el) => {
+  el.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setProvider(el.getAttribute("data-provider"));
+  });
+});
+
+if (providerAshnaSettings) {
+  providerAshnaSettings.addEventListener("click", (event) => {
+    event.stopPropagation();
+    providerDropdown.classList.add("hidden");
+    vscode.postMessage({ type: "requestAshnaSetup" });
+  });
+}
+
+if (useAshnaButton) {
+  useAshnaButton.addEventListener("click", () => setProvider("ashna"));
+}
+
+ashnaSaveButton.addEventListener("click", saveAshnaSetup);
+ashnaKeysButton.addEventListener("click", () => vscode.postMessage({ type: "openAshnaKeys" }));
+ashnaCancelButton.addEventListener("click", () => vscode.postMessage({ type: "cancelAshnaSetup" }));
+[ashnaKeyInput, ashnaModelInput, ashnaAgentInput].forEach((field) => {
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveAshnaSetup();
+    }
+  });
 });
 
 newChatButton.addEventListener("click", resetChat);
@@ -1068,6 +1260,54 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("message", (event) => {
   const message = event.data || {};
 
+  if (message.type === "providerState") {
+    provider = message.provider === "ashna" ? "ashna" : "rc";
+    ashnaState = {
+      model: message.model || "",
+      agentId: message.agentId || "",
+      hasKey: Boolean(message.hasKey)
+    };
+    updateProviderChrome();
+    return;
+  }
+
+  if (message.type === "ashnaSetup") {
+    setBusy(false);
+    ashnaState.hasKey = Boolean(message.hasKey);
+    showAshnaSetup(message);
+    return;
+  }
+
+  if (message.type === "ashnaModels") {
+    if (ashnaModelList) {
+      ashnaModelList.textContent = "";
+      (message.models || []).forEach((id) => {
+        const option = document.createElement("option");
+        option.value = id;
+        ashnaModelList.appendChild(option);
+      });
+    }
+    return;
+  }
+
+  if (message.type === "ashnaSaved") {
+    ashnaSaveButton.disabled = false;
+    ashnaSetupStatus.textContent = message.text || "Ashna connected.";
+    ashnaSetupStatus.className = "token-setup-status ok";
+    setTimeout(() => {
+      showChatApp();
+      statusHint.textContent = message.text || idleHint();
+    }, 500);
+    return;
+  }
+
+  if (message.type === "ashnaSaveError") {
+    ashnaSaveButton.disabled = false;
+    ashnaSetupStatus.textContent = message.text || "Could not save Ashna settings.";
+    ashnaSetupStatus.className = "token-setup-status err";
+    return;
+  }
+
   if (message.type === "tokenSetup") {
     setBusy(false);
     showTokenSetup(message);
@@ -1101,7 +1341,7 @@ window.addEventListener("message", (event) => {
   if (message.type === "ready" || message.type === "clearStatus") {
     showChatApp();
     clearStatus();
-    statusHint.textContent = velocityMode !== "off" ? "Velocity " + velocityMode : "Local · TAB changes mode";
+    statusHint.textContent = idleHint();
     return;
   }
 

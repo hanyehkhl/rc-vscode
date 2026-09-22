@@ -74,7 +74,7 @@ function isTransient(result: PlainPromptResult): boolean {
   return TRANSIENT_ERROR.test(result.stderr || result.stdout || "");
 }
 
-function buildVerifyPrompt(source: string, details: string): string {
+export function buildVerifyPrompt(source: string, details: string): string {
   return [
     `Your edits left the workspace failing. ${source} reports:`,
     "",
@@ -86,7 +86,7 @@ function buildVerifyPrompt(source: string, details: string): string {
   ].join("\n");
 }
 
-type Problem = { source: string; details: string };
+export type Problem = { source: string; details: string };
 
 /**
  * Look for problems the edits introduced, cheapest signal first.
@@ -95,7 +95,7 @@ type Problem = { source: string; details: string };
  * analyzed. The project's own type-checker is slower and authoritative, so it
  * runs second — and catches everything the editor never looked at.
  */
-async function findProblems(
+export async function findProblems(
   paths: string[],
   onStatus?: (text: string) => void
 ): Promise<Problem | undefined> {

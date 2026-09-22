@@ -10,8 +10,18 @@ import { startCodegraphBackgroundIndexer } from "./codegraphIndexer";
 import { setExtensionPath } from "./rcProcess";
 import { runRcInteractive } from "./terminalRunner";
 import { stopVelocityStack } from "./velocity/supervisor";
+import { initAshnaConfig } from "./ashna/config";
+import {
+  pickAshnaModel,
+  promptAshnaAgentId,
+  promptAshnaApiKey,
+  registerAshnaConfigWatcher,
+  switchProviderCommand
+} from "./ashna/chatBridge";
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // Load the Ashna key from SecretStorage before any chat view asks for it.
+  await initAshnaConfig(context.secrets);
   setExtensionPath(context.extensionPath);
   initChatHistory(context.globalState);
   setManagedPythonStoragePath(context.globalStorageUri.fsPath);
@@ -47,7 +57,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("rc.initAgents", () => {
       void initAgentsFile();
-    })
+    }),
+    vscode.commands.registerCommand("rc.switchProvider", () => switchProviderCommand()),
+    vscode.commands.registerCommand("rc.ashna.setApiKey", () => promptAshnaApiKey()),
+    vscode.commands.registerCommand("rc.ashna.selectModel", () => pickAshnaModel()),
+    vscode.commands.registerCommand("rc.ashna.setAgentId", () => promptAshnaAgentId()),
+    registerAshnaConfigWatcher()
   );
 }
 

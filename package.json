@@ -1,8 +1,8 @@
 {
   "name": "rc-vscode",
   "displayName": "RC",
-  "description": "Unofficial VS Code chat panel for RpCli (rc) by RezaParsian — maintained by hanyehkhl",
-  "version": "0.2.0",
+  "description": "Unofficial VS Code chat panel for RpCli (rc) by RezaParsian, with an optional Ashna AI provider — maintained by hanyehkhl",
+  "version": "0.3.0",
   "publisher": "hanyehkhl",
   "license": "MIT",
   "author": {
@@ -20,7 +20,9 @@
     "rc",
     "deepseek",
     "chat",
-    "ai"
+    "ai",
+    "ashna",
+    "agent"
   ],
   "repository": {
     "type": "git",
@@ -91,6 +93,22 @@
       {
         "command": "rc.initAgents",
         "title": "RC: Initialize AGENTS.md"
+      },
+      {
+        "command": "rc.switchProvider",
+        "title": "RC: Switch Chat Provider (RC / Ashna)"
+      },
+      {
+        "command": "rc.ashna.setApiKey",
+        "title": "RC: Set Ashna API Key"
+      },
+      {
+        "command": "rc.ashna.selectModel",
+        "title": "RC: Select Ashna Model"
+      },
+      {
+        "command": "rc.ashna.setAgentId",
+        "title": "RC: Set Ashna Custom Agent ID"
       }
     ],
     "configuration": {
@@ -248,6 +266,57 @@
           "type": "string",
           "default": "",
           "description": "Optional absolute path to an installed `microsandbox` package. Leave empty to resolve it normally. Use this when the package is installed somewhere the bundled CLI cannot resolve on its own."
+        },
+        "rc.provider": {
+          "type": "string",
+          "enum": [
+            "rc",
+            "ashna"
+          ],
+          "enumDescriptions": [
+            "Bundled rc CLI with a DeepSeek token.",
+            "Ashna API (api.ashna.ai) with your Ashna API key."
+          ],
+          "default": "rc",
+          "description": "Which backend answers chat turns. Switch from the provider chip in the chat header or with 'RC: Switch Chat Provider'."
+        },
+        "rc.ashna.model": {
+          "type": "string",
+          "default": "claude-fable-5",
+          "description": "Ashna foundation model id used in Agent modes (and in Chat mode when no agent id is set). The workspace tools (read/edit files, run commands) run locally with this model. See GET /models or 'RC: Select Ashna Model'."
+        },
+        "rc.ashna.agentId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Ashna custom agent id (app.ashna.ai → agent → Custom agent id). Used in Chat mode: the agent's own prompt, data sources and tools run on Ashna's servers."
+        },
+        "rc.ashna.useAgentForAgentModes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental: also send Agent-mode turns to the custom agent, with the local workspace tools attached. Ashna documents client tools for foundation models only, so this may not work for every agent."
+        },
+        "rc.ashna.baseUrl": {
+          "type": "string",
+          "default": "https://api.ashna.ai/v1/api",
+          "description": "Ashna API base URL. Leave the default unless Ashna tells you otherwise."
+        },
+        "rc.ashna.maxToolRounds": {
+          "type": "number",
+          "default": 25,
+          "minimum": 1,
+          "description": "Maximum model ↔ tool rounds per Ashna turn."
+        },
+        "rc.ashna.requestTimeoutMs": {
+          "type": "number",
+          "default": 180000,
+          "minimum": 5000,
+          "description": "Timeout for one Ashna API call (whole streamed response), in milliseconds."
+        },
+        "rc.ashna.commandTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 1000,
+          "description": "Timeout for a run_command tool call issued by an Ashna model, in milliseconds."
         }
       }
     }
@@ -255,7 +324,7 @@
   "scripts": {
     "prepare-cli": "node scripts/apply-cli-overlay.mjs",
     "bundle-node": "node scripts/bundle-node.mjs",
-    "postinstall": "npm run prepare-cli",
+    "vscode:prepublish": "npm run bundle-node && npm run prepare-cli && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --no-dependencies",
@@ -265,7 +334,7 @@
     "eval:dry": "node evals/run.mjs --dry-run",
     "eval:list": "node evals/run.mjs --list",
     "eval:clean": "node evals/clean.mjs",
-    "vscode:prepublish__disabled": "npm run bundle-node && npm run prepare-cli && npm run compile"
+    "postinstall": "npm run prepare-cli"
   },
   "dependencies": {
     "@rezaparsian/rp-cli": "^0.7.0"

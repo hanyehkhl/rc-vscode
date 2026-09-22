@@ -8,6 +8,7 @@ import { createPathContext } from './paths.js';
 import { commandContainsSudo, stripSudo } from './sudo.js';
 import { searchCode } from './codegraph.js';
 import { substringSearch } from './substringSearch.js';
+import { applyUniqueEdit } from './editMatch.js';
 import { todoTools } from './todo.js';
 import {
     emitEvent,
@@ -61,6 +62,17 @@ function elevatedExec(command) {
     });
 }
 
+/** Optional positive line number argument (tool params arrive as strings). */
+function lineArgument(arguments_, name) {
+    const raw = arguments_[name];
+    if (raw === undefined || raw === null || String(raw).trim() === '')
+        return undefined;
+    const value = Number.parseInt(String(raw).trim(), 10);
+    if (!Number.isFinite(value) || value < 1)
+        throw new Error(`Argument "${name}" must be a positive line number.`);
+    return value;
+}
+
 function resolvePathContext(pathContext) {
     return pathContext ?? createPathContext();
 }
@@ -100,13 +112,10 @@ export const tools = [
             const oldText = stringArgument(arguments_, 'old_text');
             const newText = textArgument(arguments_, 'new_text');
             const content = await fs.readFile(filePath, 'utf8');
-            const firstIndex = content.indexOf(oldText);
-            if (firstIndex === -1)
-                throw new Error('old_text was not found in the file.');
-            if (content.indexOf(oldText, firstIndex + oldText.length) !== -1) {
-                throw new Error('old_text is not unique in the file.');
-            }
-            await fs.writeFile(filePath, content.slice(0, firstIndex) + newText + content.slice(firstIndex + oldText.length), 'utf8');
+            const updated = applyUniqueEdit(content, oldText, newText);
+            if (updated === content)
+                return 'No change: new_text is identical to old_text.';
+            await fs.writeFile(filePath, updated, 'utf8');
             return 'File edited successfully.';
         },
     },
@@ -126,7 +135,7 @@ export const tools = [
     },
     {
         name: 'read_file',
-        description: 'read_file(path: string) - Reads a UTF-8 text file inside the current working directory (maximum 100 KiB).',
+        description: 'read_file(path: string, start_line?: number, end_line?: number) - Reads a UTF-8 text file inside the current working directory. Files over 100 KiB must be read in line ranges with start_line/end_line (1-based, inclusive).',
         requiresConfirmation: false,
         async execute(arguments_, _signal, pathContext) {
             const { safePath } = resolvePathContext(pathContext);
@@ -134,9 +143,20 @@ export const tools = [
             const stats = await fs.stat(filePath);
             if (!stats.isFile())
                 throw new Error('The requested path is not a file.');
-            if (stats.size > 100 * 1024)
-                throw new Error('The requested file is larger than 100 KiB.');
-            return fs.readFile(filePath, 'utf8');
+            const startLine = lineArgument(arguments_, 'start_line');
+            const endLine = lineArgument(arguments_, 'end_line');
+            if (startLine === undefined && endLine === undefined) {
+                if (stats.size > 100 * 1024) {
+                    throw new Error(`The file is ${Math.round(stats.size / 1024)} KiB (limit 100 KiB). Read it in parts with start_line and end_line.`);
+                }
+                return fs.readFile(filePath, 'utf8');
+            }
+            const lines = (await fs.readFile(filePath, 'utf8')).split(/\r?\n/);
+            const from = Math.max(1, startLine ?? 1);
+            const to = Math.min(lines.length, endLine ?? from + 399);
+            if (from > lines.length)
+                throw new Error(`start_line ${from} is past the end of the file (${lines.length} lines).`);
+            return `[lines ${from}-${to} of ${lines.length}]\n${lines.slice(from - 1, to).join('\n')}`;
         },
     },
     {

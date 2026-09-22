@@ -280,6 +280,8 @@ function nodeSearchPath(): string {
  * Resolve the bundled / installed rp-cli entry. Independent of whichever folder
  * the user has open in the workspace.
  */
+let cachedGlobalCliJs: string | undefined;
+
 export function resolveCliJsPath(): string | undefined {
   const configured = vscode.workspace.getConfiguration("rc").get<string>("cliPath")?.trim();
   if (configured) {
@@ -292,25 +294,24 @@ export function resolveCliJsPath(): string | undefined {
     }
   }
 
-  const candidates: string[] = [];
-
-  // 1) Self-contained CLI shipped inside the extension (any machine / any folder)
+  // 1) Self-contained CLI shipped inside the extension (any machine / any folder).
+  // Checked first and returned directly: the global-npm probe below spawns a
+  // process synchronously and must not run on every prompt when the bundle exists.
   if (extensionPath) {
-    candidates.push(
-      path.join(extensionPath, "vendor", "rp-cli", "dist", "source", "cli.js")
-    );
-    candidates.push(
-      path.join(
-        extensionPath,
-        "node_modules",
-        "@rezaparsian",
-        "rp-cli",
-        "dist",
-        "source",
-        "cli.js"
-      )
-    );
+    const bundled = firstExistingFile([
+      path.join(extensionPath, "vendor", "rp-cli", "dist", "source", "cli.js"),
+      path.join(extensionPath, "node_modules", "@rezaparsian", "rp-cli", "dist", "source", "cli.js")
+    ]);
+    if (bundled) {
+      return path.normalize(bundled);
+    }
   }
+
+  if (cachedGlobalCliJs && existsFile(cachedGlobalCliJs)) {
+    return cachedGlobalCliJs;
+  }
+
+  const candidates: string[] = [];
 
   // 2) Global npm install of the same package
   try {
@@ -344,6 +345,7 @@ export function resolveCliJsPath(): string | undefined {
   for (const candidate of candidates) {
     const resolved = path.normalize(candidate);
     if (existsFile(resolved)) {
+      cachedGlobalCliJs = resolved;
       return resolved;
     }
   }

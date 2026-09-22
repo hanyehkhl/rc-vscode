@@ -80,6 +80,30 @@ stop and read the file instead.
   wrong answer is the worst outcome.
 `;
 
+/**
+ * Appended to the system prompt in Chat mode only.
+ *
+ * `write_file`, `edit_file`, `delete_file` and `run_command` are all declined in
+ * this mode, so any offer to create a file is a promise the model cannot keep.
+ * The fix the user actually needs is one sentence: switch to Agent mode.
+ */
+const READ_ONLY_RULES = `
+## Chat mode is read-only (highest priority)
+
+You are in **Chat mode**. \`write_file\`, \`edit_file\`, \`delete_file\` and
+\`run_command\` are BLOCKED — every call to them is rejected. You can still read
+the workspace with \`read_file\`, \`list_directory\`, \`search_files\` and
+\`search_code\`.
+
+- NEVER say you have created, written, edited or deleted a file. You have not.
+- NEVER offer "if you approve, I'll create it" or "shall I write this?". Approval
+  changes nothing: the next turn is read-only as well.
+- When the user asks for a file to be written or changed, show the code and then
+  say plainly, in the user's own language, that Chat mode cannot write to disk and
+  that they should switch the mode selector to **Agent** (or **Agent (Full
+  Access)**) and send the request again.
+`;
+
 const EFFORT_INSTRUCTIONS = {
     low: 'Use light reasoning. Keep the chain of thought brief and answer quickly.',
     medium: 'Think carefully before answering. Check the important details, then give a clear answer.',
@@ -188,9 +212,14 @@ export async function runPlainPrompt({ prompt, thinking = false, thinkingEffort,
         // session it is already the first message, so re-sending it would waste a
         // full generation on every turn.
         const groundingRules = process.env.RC_GROUNDING === '0' ? '' : GROUNDING_RULES;
+        // Chat mode blocks every writing tool. Without being told, the model
+        // still answers "if you approve, I'll create the file" — a promise it
+        // cannot keep, because the next turn is read-only too. The user is left
+        // believing the CLI has no write access at all. Say so up front instead.
+        const readOnlyNotice = readOnly ? READ_ONLY_RULES : '';
         const finalPrompt = resumeSessionId
             ? withThinkingEffort(prompt, effort)
-            : `${getChatSystemPrompt()}\n${groundingRules}\n---\n\n${withThinkingEffort(prompt, effort)}`;
+            : `${getChatSystemPrompt()}\n${groundingRules}\n${readOnlyNotice}\n---\n\n${withThinkingEffort(prompt, effort)}`;
 
         const fullResponse = await getAIResponse({
             token,

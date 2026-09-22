@@ -48,6 +48,17 @@ import {
   saveDeepSeekToken,
   tokenConfigPath
 } from "./tokenSetup";
+import {
+  ASHNA_MESSAGE_TYPES,
+  cancelAshnaPrompt,
+  clearAshnaThread,
+  handleAshnaMessage,
+  handleAshnaPrompt,
+  postAshnaSetup,
+  postProviderState,
+  trackChatWebview
+} from "./ashna/chatBridge";
+import { getActiveProvider, hasAshnaApiKey } from "./ashna/config";
 
 function isAgentMode(value: unknown): value is UiAgentMode {
   return value === "ask" || value === "write" || value === "auto";
@@ -101,6 +112,33 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
           <button id="saveTokenButton" type="button" class="btn-primary">Continue</button>
         </div>
         <p id="tokenSetupStatus" class="token-setup-status"></p>
+        <p class="token-alt">
+          Prefer Ashna? <button id="useAshnaButton" type="button" class="link-btn">Use an Ashna API key instead</button>
+        </p>
+      </div>
+    </div>
+
+    <div id="ashnaSetup" class="token-setup hidden">
+      <div class="token-card">
+        <h2 id="ashnaSetupTitle">Connect Ashna</h2>
+        <p class="token-lead" id="ashnaLead">Use your Ashna API key to chat with Ashna models or your own Ashna agent.</p>
+        <ol>
+          <li>Open <strong>app.ashna.ai → Account → API</strong> and create a key.</li>
+          <li>Paste it below. It is stored in the OS keychain, not in settings.</li>
+        </ol>
+        <label class="field-label" for="ashnaKeyInput">API key</label>
+        <input id="ashnaKeyInput" class="field-input" type="password" placeholder="Paste Ashna API key" autocomplete="off" />
+        <label class="field-label" for="ashnaModelInput">Model <span class="field-hint">— used in Agent modes (edits files, runs commands)</span></label>
+        <input id="ashnaModelInput" class="field-input" type="text" list="ashnaModelList" placeholder="claude-fable-5" autocomplete="off" />
+        <datalist id="ashnaModelList"></datalist>
+        <label class="field-label" for="ashnaAgentInput">Custom agent id <span class="field-hint">— optional, used in Chat mode</span></label>
+        <input id="ashnaAgentInput" class="field-input" type="text" placeholder="my-agent-abc12" autocomplete="off" />
+        <div class="token-form">
+          <button id="ashnaKeysButton" type="button" class="btn-secondary">Get a key</button>
+          <button id="ashnaCancelButton" type="button" class="btn-secondary">Back</button>
+          <button id="ashnaSaveButton" type="button" class="btn-primary">Save &amp; connect</button>
+        </div>
+        <p id="ashnaSetupStatus" class="token-setup-status"></p>
       </div>
     </div>
 
@@ -109,6 +147,26 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
         <div class="topbar-title">
           <span class="brand-mark">RC</span>
           <span class="thread-label" id="threadLabel">New chat</span>
+        </div>
+        <div class="mode-menu provider-menu">
+          <button id="providerChip" class="chip-btn provider-chip" type="button" title="Chat provider">
+            <span id="providerLabel">RC</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
+          </button>
+          <div id="providerDropdown" class="mode-dropdown provider-dropdown hidden">
+            <button type="button" class="provider-option active" data-provider="rc">
+              <strong>RC · DeepSeek</strong>
+              <span>Bundled rc CLI with your DeepSeek token</span>
+            </button>
+            <button type="button" class="provider-option" data-provider="ashna">
+              <strong>Ashna</strong>
+              <span id="providerAshnaDetail">Ashna API key · models or your custom agent</span>
+            </button>
+            <button type="button" id="providerAshnaSettings" class="provider-option provider-settings">
+              <strong>Ashna settings…</strong>
+              <span>API key, model, agent id</span>
+            </button>
+          </div>
         </div>
         <button id="historyButton" class="icon-btn" title="Chat history" type="button" aria-label="Chat history">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -315,12 +373,13 @@ function describeEvent(event: RcEvent): string {
     case "tool_start":
       return target ? `${name} · ${target}` : name;
     case "tool_denied": {
+      // The read-only case names the remedy. "chat mode is read-only" alone
+      // reads like a broken tool; what the user needs is the mode switch.
+      if (event.payload.reason === "read_only") {
+        return `${name} blocked — Chat mode cannot change files. Switch the mode selector to Agent and send again.`;
+      }
       const reason =
-        event.payload.reason === "read_only"
-          ? "chat mode is read-only"
-          : event.payload.reason === "guard"
-            ? "blocked by Velocity guard"
-            : "declined";
+        event.payload.reason === "guard" ? "blocked by Velocity guard" : "declined";
       return `${name} — ${reason}`;
     }
     case "tool_result":
@@ -356,6 +415,11 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
 
   if (type === "close") {
     host.close?.();
+    return;
+  }
+
+  if (ASHNA_MESSAGE_TYPES.has(type)) {
+    await handleAshnaMessage(webview, type, message);
     return;
   }
 
@@ -411,12 +475,14 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   if (type === "historyDelete" && typeof message.id === "string") {
+    clearAshnaThread(message.id);
     await deleteThread(message.id);
     void webview.postMessage({ type: "historyList", threads: listThreads() });
     return;
   }
 
   if (type === "historyClear") {
+    clearAshnaThread();
     await clearAllThreads();
     void webview.postMessage({ type: "historyList", threads: listThreads() });
     return;
@@ -430,6 +496,9 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   if (type === "newChat") {
+    if (typeof message.previousThreadId === "string") {
+      clearAshnaThread(message.previousThreadId);
+    }
     void clearVelocityThread(activeThreadId);
     // Drop the server-side DeepSeek session too, so the next turn starts clean.
     clearThreadSession(host.threadId || activeThreadId);
@@ -439,6 +508,9 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   if (type === "cancelPrompt") {
+    if (cancelAshnaPrompt()) {
+      return;
+    }
     if (isPairRunning()) {
       abortPairMode();
     } else {
@@ -460,6 +532,29 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   if (type !== "sendPrompt" || typeof message.text !== "string") {
+    return;
+  }
+
+  if (getActiveProvider() === "ashna") {
+    const ashnaText = message.text.trim();
+    if (!ashnaText) {
+      return;
+    }
+    const notices: string[] = [];
+    if (message.pair) {
+      notices.push("Pair mode is RC-only — running a normal Ashna turn.");
+    }
+    if (message.search) {
+      notices.push("Web search is RC-only — Ashna answers from the model and workspace.");
+    }
+    await handleAshnaPrompt(
+      webview,
+      ashnaText,
+      isAgentMode(message.mode) ? message.mode : "write",
+      typeof message.threadId === "string" && message.threadId ? message.threadId : host.threadId || activeThreadId,
+      Array.isArray(message.history) ? (message.history as ChatTurn[]) : [],
+      notices
+    );
     return;
   }
 
@@ -664,6 +759,20 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
 }
 
 export function postStartupDiagnostics(webview: vscode.Webview): void {
+  trackChatWebview(webview);
+  postProviderState(webview);
+
+  // Ashna is a plain HTTPS API: no bundled CLI or DeepSeek token required.
+  if (getActiveProvider() === "ashna") {
+    if (!hasAshnaApiKey()) {
+      postAshnaSetup(webview, "missing");
+      return;
+    }
+    void webview.postMessage({ type: "ready" });
+    void webview.postMessage({ type: "velocityDefaults", mode: getVelocitySettings().mode });
+    return;
+  }
+
   if (!resolveDeepSeekToken()) {
     postTokenSetup(webview, true);
     return;
