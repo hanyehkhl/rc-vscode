@@ -2,7 +2,7 @@
   "name": "rc-vscode",
   "displayName": "RC",
   "description": "Unofficial VS Code chat panel for RpCli (rc) by RezaParsian, with an optional Ashna AI provider — maintained by hanyehkhl",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "hanyehkhl",
   "license": "MIT",
   "author": {
