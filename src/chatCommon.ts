@@ -59,6 +59,7 @@ import {
   trackChatWebview
 } from "./ashna/chatBridge";
 import { getActiveProvider, hasAshnaApiKey } from "./ashna/config";
+import { cancelExternalPrompt, handleExternalPrompt } from "./deepseek/chatBridge";
 
 function isAgentMode(value: unknown): value is UiAgentMode {
   return value === "ask" || value === "write" || value === "auto";
@@ -162,6 +163,18 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
             <button type="button" class="provider-option" data-provider="ashna">
               <strong>Ashna</strong>
               <span id="providerAshnaDetail">Ashna API key · models or your custom agent</span>
+            </button>
+            <button type="button" class="provider-option" data-provider="deepseek">
+              <strong>DeepSeek agent</strong>
+              <span id="providerDeepseekDetail">Built-in agent on the DeepSeek API</span>
+            </button>
+            <button type="button" class="provider-option" data-provider="hermes">
+              <strong>Hermes Agent</strong>
+              <span id="providerHermesDetail">Nous Hermes Agent CLI · DeepSeek API</span>
+            </button>
+            <button type="button" class="provider-option" data-provider="hermes-free">
+              <strong>Hermes Free</strong>
+              <span id="providerHermesFreeDetail">Hermes on the free DeepSeek web chat · local gateway</span>
             </button>
             <button type="button" id="providerAshnaSettings" class="provider-option provider-settings">
               <strong>Ashna settings…</strong>
@@ -509,7 +522,7 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   if (type === "cancelPrompt") {
-    if (cancelAshnaPrompt()) {
+    if (cancelExternalPrompt() || cancelAshnaPrompt()) {
       return;
     }
     if (isPairRunning()) {
@@ -536,7 +549,37 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
     return;
   }
 
-  if (getActiveProvider() === "ashna") {
+  const activeProvider = getActiveProvider();
+  if (activeProvider === "deepseek" || activeProvider === "hermes" || activeProvider === "hermes-free") {
+    const externalText = message.text.trim();
+    if (!externalText) {
+      return;
+    }
+    if (activeProvider === "hermes-free" && !resolveDeepSeekToken()) {
+      postTokenSetup(webview, true);
+      return;
+    }
+    const name = activeProvider === "hermes" ? "Hermes" : activeProvider === "hermes-free" ? "Hermes Free" : "DeepSeek agent";
+    const notices: string[] = [];
+    if (message.pair) {
+      notices.push(`Pair mode is RC-only — running a normal ${name} turn.`);
+    }
+    if (message.search) {
+      notices.push(`Web search is RC-only — ${name} answers with its own tools.`);
+    }
+    await handleExternalPrompt(
+      webview,
+      activeProvider,
+      externalText,
+      isAgentMode(message.mode) ? message.mode : "write",
+      typeof message.threadId === "string" && message.threadId ? message.threadId : host.threadId || activeThreadId,
+      Array.isArray(message.history) ? (message.history as ChatTurn[]) : [],
+      notices
+    );
+    return;
+  }
+
+  if (activeProvider === "ashna") {
     const ashnaText = message.text.trim();
     if (!ashnaText) {
       return;
@@ -762,6 +805,23 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
 export function postStartupDiagnostics(webview: vscode.Webview): void {
   trackChatWebview(webview);
   postProviderState(webview);
+
+  // The API-backed providers need no bundled CLI or DeepSeek web token; their
+  // keys are requested on first use.
+  if (getActiveProvider() === "deepseek" || getActiveProvider() === "hermes") {
+    void webview.postMessage({ type: "ready" });
+    return;
+  }
+
+  // Hermes Free runs on the same free web token as RC, so ask for it up front.
+  if (getActiveProvider() === "hermes-free") {
+    if (!resolveDeepSeekToken()) {
+      postTokenSetup(webview, true);
+      return;
+    }
+    void webview.postMessage({ type: "ready" });
+    return;
+  }
 
   // Ashna is a plain HTTPS API: no bundled CLI or DeepSeek token required.
   if (getActiveProvider() === "ashna") {

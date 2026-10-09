@@ -35,6 +35,49 @@ function createServeConfirmTool(mode) {
     return async () => true;
 }
 
+/**
+ * Raw turn for clients that bring their own agent loop (the Hermes Free
+ * gateway): no server system prompt, no server-side tools, and an explicit
+ * session so conversations never bleed into each other or into `rc serve`'s
+ * own global session, which is restored afterwards.
+ */
+export async function runRawCompletion(options) {
+    const previousSessionId = getCurrentSessionId();
+    const previousInitialized = initializedSessionToken;
+    try {
+        if (options.sessionId)
+            setCurrentSessionId(options.sessionId);
+        else
+            resetChatSession();
+        const result = await getAIResponse({
+            token: options.token,
+            prompt: options.prompt,
+            thinkingEnabled: options.thinkingEnabled,
+            searchEnabled: false,
+            onChunk: options.onChunk,
+            mode: 'plan',
+            cwd: process.cwd(),
+            toolsEnabled: false,
+        });
+        return {
+            stopped: result.stopped,
+            ok: result.ok,
+            sessionId: result.sessionId || getCurrentSessionId() || '',
+            content: result.content || '',
+            thinkingContent: result.thinkingContent || '',
+            tokenUsage: result.tokenUsage,
+            error: result.error,
+        };
+    }
+    finally {
+        if (previousSessionId)
+            setCurrentSessionId(previousSessionId);
+        else
+            resetChatSession();
+        initializedSessionToken = previousInitialized;
+    }
+}
+
 export async function runCompletion(options) {
     if (options.shouldAbort())
         return { stopped: true, ok: true, sessionId: '', content: '', thinkingContent: '', toolRoundLimitReached: false };

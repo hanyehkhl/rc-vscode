@@ -11,6 +11,9 @@ import { setExtensionPath } from "./rcProcess";
 import { runRcInteractive } from "./terminalRunner";
 import { stopVelocityStack } from "./velocity/supervisor";
 import { initAshnaConfig } from "./ashna/config";
+import { openExternalSettings, pickDeepSeekModel, promptDeepSeekApiKey } from "./deepseek/chatBridge";
+import { initDeepSeekConfig } from "./deepseek/config";
+import { showHermesFreeStats, stopHermesFree } from "./hermes/free";
 import {
   pickAshnaModel,
   promptAshnaAgentId,
@@ -22,6 +25,7 @@ import {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Load the Ashna key from SecretStorage before any chat view asks for it.
   await initAshnaConfig(context.secrets);
+  await initDeepSeekConfig(context.secrets);
   setExtensionPath(context.extensionPath);
   initChatHistory(context.globalState);
   setManagedPythonStoragePath(context.globalStorageUri.fsPath);
@@ -62,10 +66,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("rc.ashna.setApiKey", () => promptAshnaApiKey()),
     vscode.commands.registerCommand("rc.ashna.selectModel", () => pickAshnaModel()),
     vscode.commands.registerCommand("rc.ashna.setAgentId", () => promptAshnaAgentId()),
+    vscode.commands.registerCommand("rc.deepseek.setApiKey", () => promptDeepSeekApiKey()),
+    vscode.commands.registerCommand("rc.deepseek.selectModel", () => pickDeepSeekModel("deepseek")),
+    vscode.commands.registerCommand("rc.hermes.settings", () => openExternalSettings("hermes")),
+    vscode.commands.registerCommand("rc.hermesFree.settings", () => openExternalSettings("hermes-free")),
+    vscode.commands.registerCommand("rc.hermesFree.stats", () => showHermesFreeStats()),
     registerAshnaConfigWatcher()
   );
 }
 
 export function deactivate(): void {
+  void stopHermesFree();
   void stopVelocityStack();
 }

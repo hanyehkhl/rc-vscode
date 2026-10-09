@@ -82,6 +82,8 @@ type ClientOptions = {
   baseUrl: string;
   apiKey: string;
   timeoutMs: number;
+  /** Service name used in error messages (defaults to "Ashna"). */
+  label?: string;
 };
 
 function kindForStatus(status: number): AshnaErrorKind {
@@ -93,7 +95,14 @@ function kindForStatus(status: number): AshnaErrorKind {
   return "bad_request";
 }
 
-function friendlyStatusMessage(status: number, serverMessage: string): string {
+function friendlyStatusMessage(status: number, serverMessage: string, label = "Ashna"): string {
+  if (label !== "Ashna") {
+    const detail = serverMessage ? ` (${serverMessage})` : "";
+    if (status === 401) return `${label} rejected the API key${detail}.`;
+    if (status === 402) return `${label}: insufficient balance${detail}.`;
+    if (status === 429) return `${label} rate limit reached${detail}. Wait a moment and try again.`;
+    return `${label} API error ${status}${detail}.`;
+  }
   const detail = serverMessage ? ` (${serverMessage})` : "";
   switch (status) {
     case 401:
@@ -195,6 +204,10 @@ class ToolCallAccumulator {
 export class AshnaClient {
   constructor(private readonly options: ClientOptions) {}
 
+  private get label(): string {
+    return this.options.label ?? "Ashna";
+  }
+
   private headers(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.options.apiKey}`,
@@ -215,7 +228,7 @@ export class AshnaClient {
       if (!response.ok) {
         const message = await readErrorMessage(response);
         throw new AshnaApiError(
-          friendlyStatusMessage(response.status, message),
+          friendlyStatusMessage(response.status, message, this.label),
           kindForStatus(response.status),
           response.status
         );
@@ -233,12 +246,12 @@ export class AshnaClient {
     if (signal?.aborted) return new AshnaApiError("Cancelled.", "aborted");
     if (timedOut) {
       return new AshnaApiError(
-        `Ashna did not respond within ${Math.round(this.options.timeoutMs / 1000)}s.`,
+        `${this.label} did not respond within ${Math.round(this.options.timeoutMs / 1000)}s.`,
         "timeout"
       );
     }
     const message = error instanceof Error ? error.message : String(error);
-    return new AshnaApiError(`Could not reach Ashna: ${message}`, "network");
+    return new AshnaApiError(`Could not reach ${this.label}: ${message}`, "network");
   }
 
   async listModels(signal?: AbortSignal): Promise<string[]> {
@@ -281,7 +294,7 @@ export class AshnaClient {
       if (!response.ok) {
         const message = await readErrorMessage(response);
         throw new AshnaApiError(
-          friendlyStatusMessage(response.status, message),
+          friendlyStatusMessage(response.status, message, this.label),
           kindForStatus(response.status),
           response.status
         );

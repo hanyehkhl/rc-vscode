@@ -8,7 +8,13 @@ import * as vscode from "vscode";
  * ordinary settings so users can also edit them from the Settings UI.
  */
 
-export type ChatProviderId = "rc" | "ashna";
+export type ChatProviderId = "rc" | "ashna" | "deepseek" | "hermes" | "hermes-free";
+
+const PROVIDER_IDS: readonly ChatProviderId[] = ["rc", "ashna", "deepseek", "hermes", "hermes-free"];
+
+export function parseProviderId(value: unknown): ChatProviderId {
+  return PROVIDER_IDS.includes(value as ChatProviderId) ? (value as ChatProviderId) : "rc";
+}
 
 export const ASHNA_DEFAULT_BASE_URL = "https://api.ashna.ai/v1/api";
 export const ASHNA_DEFAULT_MODEL = "claude-fable-5";
@@ -44,7 +50,7 @@ function config(): vscode.WorkspaceConfiguration {
 }
 
 export function getActiveProvider(): ChatProviderId {
-  return config().get<string>("provider") === "ashna" ? "ashna" : "rc";
+  return parseProviderId(config().get<string>("provider"));
 }
 
 export async function setActiveProvider(provider: ChatProviderId): Promise<void> {

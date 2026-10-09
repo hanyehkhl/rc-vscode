@@ -21,7 +21,7 @@ const SLASH_COMMANDS = [
   { name: "/velocity", description: "Cycle Velocity: off / auto / on" },
   { name: "/token", description: "Set DeepSeek token (RC) or Ashna key (Ashna)" },
   { name: "/ashna", description: "Ashna settings: API key, model, agent id" },
-  { name: "/provider", description: "Switch provider: RC ↔ Ashna" },
+  { name: "/provider", description: "Switch provider: RC · Ashna · DeepSeek agent · Hermes · Hermes Free" },
   { name: "/exit", description: "Close panel" },
   { name: "/quit", description: "Close panel" }
 ];
@@ -87,6 +87,9 @@ const ashnaSetupStatus = document.getElementById("ashnaSetupStatus");
 /** Provider state mirrors the extension's rc.provider setting (source of truth). */
 let provider = "rc";
 let ashnaState = { model: "", agentId: "", hasKey: false };
+let externalState = { deepseek: { model: "", hasKey: false }, hermes: { model: "" }, "hermes-free": { model: "" } };
+const PROVIDERS = ["rc", "ashna", "deepseek", "hermes", "hermes-free"];
+const PROVIDER_NAMES = { rc: "RC", ashna: "Ashna", deepseek: "DeepSeek", hermes: "Hermes", "hermes-free": "Hermes Free" };
 
 let modeIndex = 1;
 let searchEnabled = false;
@@ -185,9 +188,17 @@ function isAshna() {
   return provider === "ashna";
 }
 
+/** DeepSeek-API providers configured from native input boxes. */
+function isExternal() {
+  return provider === "deepseek" || provider === "hermes" || provider === "hermes-free";
+}
+
 function idleHint() {
   if (isAshna()) {
     return "Ashna · " + (currentMode().id === "ask" && ashnaState.agentId ? "agent " + ashnaState.agentId : ashnaState.model || "model");
+  }
+  if (isExternal()) {
+    return PROVIDER_NAMES[provider] + " · " + (externalState[provider].model || "model");
   }
   return velocityMode !== "off" ? "Velocity " + velocityMode : "Local · TAB changes mode";
 }
@@ -198,30 +209,47 @@ function setHidden(element, hidden) {
 
 function updateProviderChrome() {
   const ashna = isAshna();
+  const apiProvider = ashna || isExternal();
   if (providerLabel) {
-    providerLabel.textContent = ashna ? "Ashna" : "RC";
+    providerLabel.textContent = PROVIDER_NAMES[provider] || "RC";
   }
   if (providerChip) {
     providerChip.classList.toggle("ashna", ashna);
     providerChip.title = ashna
       ? "Ashna · model " + (ashnaState.model || "?") + (ashnaState.agentId ? " · agent " + ashnaState.agentId : "")
-      : "RC · DeepSeek";
+      : isExternal()
+        ? PROVIDER_NAMES[provider] + " · " + (externalState[provider].model || "?")
+        : "RC · DeepSeek";
   }
   if (providerAshnaDetail) {
     providerAshnaDetail.textContent = ashnaState.hasKey
       ? "Model " + (ashnaState.model || "?") + (ashnaState.agentId ? " · agent " + ashnaState.agentId : "")
       : "Needs an Ashna API key";
   }
+  const deepseekDetail = document.getElementById("providerDeepseekDetail");
+  if (deepseekDetail) {
+    deepseekDetail.textContent = externalState.deepseek.hasKey
+      ? "Built-in agent · " + (externalState.deepseek.model || "?")
+      : "Built-in agent · needs a DeepSeek API key";
+  }
+  const hermesDetail = document.getElementById("providerHermesDetail");
+  if (hermesDetail) {
+    hermesDetail.textContent = "Hermes Agent CLI · " + (externalState.hermes.model || "?");
+  }
+  const hermesFreeDetail = document.getElementById("providerHermesFreeDetail");
+  if (hermesFreeDetail) {
+    hermesFreeDetail.textContent = "Free web chat · " + (externalState["hermes-free"].model || "?") + " · delta sync + self-repair";
+  }
   document.querySelectorAll(".provider-option[data-provider]").forEach((el) => {
     el.classList.toggle("active", el.getAttribute("data-provider") === provider);
   });
   // RC-only features have no Ashna equivalent; hide them instead of letting them silently no-op.
-  setHidden(searchChip, ashna);
-  setHidden(pairChip, ashna);
-  setHidden(velocityChip ? velocityChip.parentElement : null, ashna);
-  setHidden(thinkingChip ? thinkingChip.parentElement : null, ashna);
+  setHidden(searchChip, apiProvider);
+  setHidden(pairChip, apiProvider);
+  setHidden(velocityChip ? velocityChip.parentElement : null, apiProvider);
+  setHidden(thinkingChip ? thinkingChip.parentElement : null, apiProvider);
   if (tokenChip) {
-    tokenChip.textContent = ashna ? "Ashna settings" : "Update token";
+    tokenChip.textContent = ashna ? "Ashna settings" : isExternal() ? PROVIDER_NAMES[provider] + " settings" : "Update token";
     tokenChip.title = ashna ? "/ashna" : "/token";
   }
   if (!busy) {
@@ -230,7 +258,7 @@ function updateProviderChrome() {
 }
 
 function setProvider(next) {
-  if (next !== "rc" && next !== "ashna") return;
+  if (!PROVIDERS.includes(next)) return;
   if (providerDropdown) providerDropdown.classList.add("hidden");
   vscode.postMessage({ type: "setProvider", provider: next });
 }
@@ -238,6 +266,8 @@ function setProvider(next) {
 function requestCredentialSetup() {
   if (isAshna()) {
     vscode.postMessage({ type: "requestAshnaSetup" });
+  } else if (isExternal()) {
+    vscode.postMessage({ type: "requestExternalSetup", provider });
   } else {
     vscode.postMessage({ type: "requestTokenSetup", reason: "missing" });
   }
@@ -937,7 +967,7 @@ function runSlashOrSend() {
   if (command === "/provider") {
     input.value = "";
     hidePicker();
-    setProvider(isAshna() ? "rc" : "ashna");
+    setProvider(PROVIDERS[(PROVIDERS.indexOf(provider) + 1) % PROVIDERS.length]);
     return;
   }
   if (command === "/exit" || command === "/quit") {
@@ -1261,7 +1291,15 @@ window.addEventListener("message", (event) => {
   const message = event.data || {};
 
   if (message.type === "providerState") {
-    provider = message.provider === "ashna" ? "ashna" : "rc";
+    provider = PROVIDERS.includes(message.provider) ? message.provider : "rc";
+    externalState = {
+      deepseek: {
+        model: (message.deepseek && message.deepseek.model) || "",
+        hasKey: Boolean(message.deepseek && message.deepseek.hasKey)
+      },
+      hermes: { model: (message.hermes && message.hermes.model) || "" },
+      "hermes-free": { model: (message.hermesFree && message.hermesFree.model) || "" }
+    };
     ashnaState = {
       model: message.model || "",
       agentId: message.agentId || "",

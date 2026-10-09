@@ -28,7 +28,11 @@ export type AshnaTurnOptions = {
   /** Receives the full assistant text streamed so far (not just the delta). */
   onPreview: (text: string) => void;
   onToolEvent: (text: string) => void;
+  /** Run against another OpenAI-compatible API (e.g. DeepSeek) instead of Ashna. */
+  profile?: RunnerProfile;
 };
+
+export type RunnerProfile = { label: string; baseUrl: string; apiKey: string; model: string };
 
 export type AshnaTurnResult =
   | { ok: true; text: string; limitReached: boolean; target: string }
@@ -224,7 +228,7 @@ async function buildUserMessage(text: string, root: string | undefined, settings
 
 type Approval = "allow" | "allowAll" | "deny";
 
-async function askApproval(name: string, args: Record<string, unknown>): Promise<Approval> {
+async function askApproval(label: string, name: string, args: Record<string, unknown>): Promise<Approval> {
   const detail =
     name === "run_command"
       ? `Command:\n${String(args.command ?? "")}`
@@ -236,7 +240,7 @@ async function askApproval(name: string, args: Record<string, unknown>): Promise
             ? `Delete file: ${String(args.path ?? "")}`
             : describeToolCall(name, args);
   const choice = await vscode.window.showWarningMessage(
-    `Ashna wants to run ${name}`,
+    `${label} wants to run ${name}`,
     { modal: true, detail },
     "Allow",
     "Allow all this turn"
@@ -294,7 +298,7 @@ async function runToolCalls(
     }
 
     if (mutating && mode === "write" && !state.allowAll) {
-      const approval = await askApproval(name, args);
+      const approval = await askApproval(options.profile?.label ?? "Ashna", name, args);
       if (approval === "deny") {
         declined = true;
         reply("The user declined this action.");
@@ -319,15 +323,19 @@ async function runToolCalls(
 }
 
 export async function runAshnaTurn(text: string, options: AshnaTurnOptions): Promise<AshnaTurnResult> {
-  const apiKey = getAshnaApiKey();
+  const profile = options.profile;
+  const label = profile?.label ?? "Ashna";
+  const apiKey = profile ? profile.apiKey : getAshnaApiKey();
   if (!apiKey) {
-    return { ok: false, cancelled: false, error: "Ashna API key is not set.", kind: "auth" };
+    return { ok: false, cancelled: false, error: `${label} API key is not set.`, kind: "auth" };
   }
   if (activeController) {
-    return { ok: false, cancelled: false, error: "Another Ashna turn is still running." };
+    return { ok: false, cancelled: false, error: "Another agent turn is still running." };
   }
 
-  const settings = getAshnaSettings();
+  const settings: AshnaSettings = profile
+    ? { ...getAshnaSettings(), baseUrl: profile.baseUrl, model: profile.model, agentId: "", useAgentForAgentModes: false }
+    : getAshnaSettings();
   const agentSettings = getAgentSettings();
   const target = chooseTarget(options.mode, settings);
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -335,7 +343,7 @@ export async function runAshnaTurn(text: string, options: AshnaTurnOptions): Pro
 
   const controller = new AbortController();
   activeController = controller;
-  const client = new AshnaClient({ baseUrl: settings.baseUrl, apiKey, timeoutMs: settings.requestTimeoutMs });
+  const client = new AshnaClient({ baseUrl: settings.baseUrl, apiKey, timeoutMs: settings.requestTimeoutMs, label });
 
   try {
     const prior = getSession(options.threadId) ?? historyToMessages(options.history);
@@ -355,7 +363,7 @@ export async function runAshnaTurn(text: string, options: AshnaTurnOptions): Pro
     const canVerify = agentSettings.verifyEdits && !target.readOnly;
     const maxContinues = agentSettings.autoContinue ? Math.max(0, agentSettings.maxContinues) : 0;
 
-    options.onStatus(`Ashna · ${target.isAgent ? "agent" : "model"} ${target.id}…`);
+    options.onStatus(`${label} · ${target.isAgent ? "agent" : "model"} ${target.id}…`);
 
     let transcript = "";
     let budget = settings.maxToolRounds;
@@ -401,7 +409,7 @@ export async function runAshnaTurn(text: string, options: AshnaTurnOptions): Pro
         if (controller.signal.aborted) {
           return { ok: false, cancelled: true, error: "Cancelled." };
         }
-        options.onStatus(`Ashna · step ${round + 1}…`);
+        options.onStatus(`${label} · step ${round + 1}…`);
         continue;
       }
 

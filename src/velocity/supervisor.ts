@@ -104,6 +104,68 @@ function killManaged(managed: ManagedProcess | undefined): void {
   }
 }
 
+let serveToken = "";
+let serveStarting: Promise<string | undefined> | undefined;
+
+/**
+ * Starts the bundled `rc serve` on the Velocity serve port (shared by Velocity
+ * and Hermes Free) and returns its URL, or undefined when it cannot run. A
+ * server we started with an older token is restarted so a refreshed token
+ * takes effect.
+ */
+export async function ensureRcServe(): Promise<string | undefined> {
+  if (serveStarting) {
+    return serveStarting;
+  }
+  serveStarting = (async () => {
+    const nodePath = resolveNodePath();
+    const cliJs = resolveCliJsPath();
+    const token = resolveDeepSeekToken();
+    if (!nodePath || !cliJs || !token) {
+      return undefined;
+    }
+    const serveUrl = `http://127.0.0.1:${getVelocitySettings().servePort}`;
+    if (serveProcess && serveToken !== token) {
+      killManaged(serveProcess);
+      serveProcess = undefined;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    if (await waitForHealth(serveUrl, 1200)) {
+      return serveUrl;
+    }
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
+    serveProcess = spawnManaged(
+      "rc-serve",
+      nodePath,
+      [cliJs, "serve", "--host", "127.0.0.1", "--port", String(getVelocitySettings().servePort)],
+      {
+        cwd,
+        env: {
+          ...process.env,
+          DEEPSEEK_TOKEN: token
+        }
+      }
+    );
+    serveToken = token;
+    return (await waitForHealth(serveUrl, 20_000)) ? serveUrl : undefined;
+  })();
+  try {
+    return await serveStarting;
+  } finally {
+    serveStarting = undefined;
+  }
+}
+
+/** True when we own the running `rc serve` (so it may be restarted). */
+export function ownsRcServe(): boolean {
+  return serveProcess !== undefined;
+}
+
+export function restartRcServe(): void {
+  killManaged(serveProcess);
+  serveProcess = undefined;
+}
+
 export async function ensureVelocityStack(): Promise<boolean> {
   if (starting) {
     return starting;
@@ -133,23 +195,9 @@ export async function ensureVelocityStack(): Promise<boolean> {
     }
 
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-    const serveUrl = `http://127.0.0.1:${settings.servePort}`;
-    if (!(await waitForHealth(serveUrl, 1200))) {
-      serveProcess = spawnManaged(
-        "rc-serve",
-        nodePath,
-        [cliJs, "serve", "--host", "127.0.0.1", "--port", String(settings.servePort)],
-        {
-          cwd,
-          env: {
-            ...process.env,
-            DEEPSEEK_TOKEN: token
-          }
-        }
-      );
-      if (!(await waitForHealth(serveUrl, 20_000))) {
-        return false;
-      }
+    const serveUrl = await ensureRcServe();
+    if (!serveUrl) {
+      return false;
     }
 
     const daemonEnv = {

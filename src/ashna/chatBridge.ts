@@ -9,12 +9,15 @@ import {
   getAshnaSettings,
   hasAshnaApiKey,
   saveAshnaApiKey,
+  parseProviderId,
   setActiveProvider,
   updateAshnaSettings,
   type ChatProviderId
 } from "./config";
 import { abortAshnaTurn, listAshnaModels, runAshnaTurn } from "./runner";
 import { clearSession } from "./session";
+import { externalProviderState, openExternalSettings, promptDeepSeekApiKey } from "../deepseek/chatBridge";
+import { hasDeepSeekApiKey } from "../deepseek/config";
 
 /**
  * Glue between the chat webview and the Ashna provider. chatCommon forwards the
@@ -29,7 +32,8 @@ export const ASHNA_MESSAGE_TYPES = new Set([
   "saveAshnaConfig",
   "openAshnaKeys",
   "pickAshnaModel",
-  "cancelAshnaSetup"
+  "cancelAshnaSetup",
+  "requestExternalSetup"
 ]);
 
 function providerStateMessage(): Record<string, unknown> {
@@ -39,7 +43,8 @@ function providerStateMessage(): Record<string, unknown> {
     provider: getActiveProvider(),
     model: settings.model,
     agentId: settings.agentId,
-    hasKey: hasAshnaApiKey()
+    hasKey: hasAshnaApiKey(),
+    ...externalProviderState()
   };
 }
 
@@ -68,7 +73,10 @@ export function broadcastProviderState(): void {
 
 export function registerAshnaConfigWatcher(): vscode.Disposable {
   return vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("rc.provider") || event.affectsConfiguration("rc.ashna")) {
+    if (event.affectsConfiguration("rc.provider") || event.affectsConfiguration("rc.ashna") ||
+      event.affectsConfiguration("rc.deepseek") ||
+      event.affectsConfiguration("rc.hermes") ||
+      event.affectsConfiguration("rc.hermesFree")) {
       broadcastProviderState();
     }
   });
@@ -151,14 +159,24 @@ export async function handleAshnaMessage(
 ): Promise<boolean> {
   switch (type) {
     case "setProvider": {
-      const provider: ChatProviderId = message.provider === "ashna" ? "ashna" : "rc";
+      const provider: ChatProviderId = parseProviderId(message.provider);
       await setActiveProvider(provider);
       postProviderState(webview);
       if (provider === "ashna" && !hasAshnaApiKey()) {
         postAshnaSetup(webview, "missing");
       }
+      if (provider === "deepseek" && !hasDeepSeekApiKey()) {
+        await promptDeepSeekApiKey("The DeepSeek agent needs an API key.");
+        postProviderState(webview);
+      }
       return true;
     }
+    case "requestExternalSetup":
+      await openExternalSettings(
+        message.provider === "hermes" || message.provider === "hermes-free" ? message.provider : "deepseek"
+      );
+      postProviderState(webview);
+      return true;
     case "requestAshnaSetup":
       postAshnaSetup(webview, "edit");
       void postModelCatalog(webview);
@@ -312,7 +330,25 @@ export async function switchProviderCommand(): Promise<void> {
   const picked = await vscode.window.showQuickPick(
     [
       { label: "RC (DeepSeek)", id: "rc" as const, description: current === "rc" ? "current" : undefined },
-      { label: "Ashna", id: "ashna" as const, description: current === "ashna" ? "current" : undefined }
+      { label: "Ashna", id: "ashna" as const, description: current === "ashna" ? "current" : undefined },
+      {
+        label: "DeepSeek agent",
+        id: "deepseek" as const,
+        detail: "Built-in agent (files, commands, verify) on the DeepSeek API",
+        description: current === "deepseek" ? "current" : undefined
+      },
+      {
+        label: "Hermes Agent",
+        id: "hermes" as const,
+        detail: "Nous Research Hermes Agent CLI (memory, skills, own tools) on the DeepSeek API",
+        description: current === "hermes" ? "current" : undefined
+      },
+      {
+        label: "Hermes Free",
+        id: "hermes-free" as const,
+        detail: "Hermes Agent on the free DeepSeek web chat via the local gateway (delta sync, self-repairing tool calls)",
+        description: current === "hermes-free" ? "current" : undefined
+      }
     ],
     { title: "RC chat provider" }
   );
@@ -320,5 +356,8 @@ export async function switchProviderCommand(): Promise<void> {
   await setActiveProvider(picked.id);
   if (picked.id === "ashna" && !hasAshnaApiKey()) {
     await promptAshnaApiKey();
+  }
+  if ((picked.id === "deepseek" || picked.id === "hermes") && !hasDeepSeekApiKey()) {
+    await promptDeepSeekApiKey();
   }
 }

@@ -7,7 +7,7 @@ import { resolveServeMode } from '../prompts/index.js';
 import { ApiError, errorBody, sendError, toApiError } from './errors.js';
 import { cors, getToken } from './http.js';
 import { buildCompletionPrompt, generateCompletionId, parseClientToolCalls, resolveModel, resolveThinkingEnabled, toUsage, validateTools, withToolInstructions, } from './request.js';
-import { enqueueCompletion, getSessionTools, rememberSessionTools, runCompletion } from './session.js';
+import { enqueueCompletion, getSessionTools, rememberSessionTools, runCompletion, runRawCompletion } from './session.js';
 import { streamChunk, streamToolEvent, writeSse } from './stream.js';
 
 dotenv.config({ path: tokenConfigPath, quiet: true });
@@ -50,6 +50,58 @@ export async function startServer(options = {}) {
             return;
         }
         res.json(deepSeekModel);
+    });
+    // Raw turn for clients with their own agent loop (Hermes Free gateway):
+    // one prompt into an explicit DeepSeek web session, no server prompt/tools.
+    app.post('/rc/raw/turn', async (req, res) => {
+        let clientDisconnected = false;
+        res.on('close', () => {
+            if (!res.writableEnded)
+                clientDisconnected = true;
+        });
+        try {
+            const body = (req.body ?? {});
+            const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+            if (!prompt.trim()) {
+                throw new ApiError(400, "'prompt' is required", 'invalid_request_error', 'invalid_prompt', 'prompt');
+            }
+            const sessionId = typeof body.session_id === 'string' && body.session_id.trim() ? body.session_id.trim() : undefined;
+            const token = getToken(req);
+            const result = await enqueueCompletion(async () => {
+                if (clientDisconnected)
+                    return { stopped: true, ok: true, sessionId: '', content: '', thinkingContent: '' };
+                try {
+                    return await runRawCompletion({
+                        token,
+                        sessionId,
+                        prompt,
+                        thinkingEnabled: body.thinking === true,
+                    });
+                }
+                finally {
+                    if (clientDisconnected)
+                        await stopCurrentGeneration(token).catch(() => undefined);
+                }
+            });
+            if (clientDisconnected)
+                return;
+            if (!result.ok)
+                throw new ApiError(500, result.error || 'The model produced an error.', 'server_error');
+            res.json({
+                session_id: result.sessionId,
+                content: result.content,
+                reasoning: result.thinkingContent,
+                stopped: Boolean(result.stopped),
+                usage: toUsage(result.tokenUsage) ?? null,
+            });
+        }
+        catch (error) {
+            const apiError = toApiError(error);
+            if (apiError.status >= 500)
+                console.error('Raw turn error:', error);
+            if (!res.headersSent)
+                sendError(res, apiError);
+        }
     });
     app.post(['/v1/chat/completions', '/v1/chat/completions/:sessionId'], async (req, res) => {
         let clientDisconnected = false;

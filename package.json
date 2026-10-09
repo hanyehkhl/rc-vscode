@@ -96,7 +96,7 @@
       },
       {
         "command": "rc.switchProvider",
-        "title": "RC: Switch Chat Provider (RC / Ashna)"
+        "title": "RC: Switch Chat Provider (RC / Ashna / DeepSeek agent / Hermes / Hermes Free)"
       },
       {
         "command": "rc.ashna.setApiKey",
@@ -109,6 +109,26 @@
       {
         "command": "rc.ashna.setAgentId",
         "title": "RC: Set Ashna Custom Agent ID"
+      },
+      {
+        "command": "rc.deepseek.setApiKey",
+        "title": "RC: Set DeepSeek API Key (DeepSeek agent / Hermes)"
+      },
+      {
+        "command": "rc.deepseek.selectModel",
+        "title": "RC: Select DeepSeek Agent Model"
+      },
+      {
+        "command": "rc.hermes.settings",
+        "title": "RC: Hermes Agent Settings"
+      },
+      {
+        "command": "rc.hermesFree.settings",
+        "title": "RC: Hermes Free Settings"
+      },
+      {
+        "command": "rc.hermesFree.stats",
+        "title": "RC: Hermes Free Gateway Stats"
       }
     ],
     "configuration": {
@@ -271,11 +291,17 @@
           "type": "string",
           "enum": [
             "rc",
-            "ashna"
+            "ashna",
+            "deepseek",
+            "hermes",
+            "hermes-free"
           ],
           "enumDescriptions": [
             "Bundled rc CLI with a DeepSeek token.",
-            "Ashna API (api.ashna.ai) with your Ashna API key."
+            "Ashna API (api.ashna.ai) with your Ashna API key.",
+            "Built-in agent (workspace tools, verify loop) on the DeepSeek API with your platform.deepseek.com key.",
+            "Nous Research Hermes Agent CLI on the DeepSeek API (needs `hermes` installed).",
+            "Hermes Agent on the free DeepSeek web chat through RC's local gateway: delta sync, compact tool manifest, self-repairing tool calls (needs `hermes` installed and your DeepSeek web token)."
           ],
           "default": "rc",
           "description": "Which backend answers chat turns. Switch from the provider chip in the chat header or with 'RC: Switch Chat Provider'."
@@ -317,6 +343,75 @@
           "default": 120000,
           "minimum": 1000,
           "description": "Timeout for a run_command tool call issued by an Ashna model, in milliseconds."
+        },
+        "rc.deepseek.model": {
+          "type": "string",
+          "default": "deepseek-chat",
+          "description": "DeepSeek API model used by the built-in DeepSeek agent. deepseek-chat is recommended for tool use."
+        },
+        "rc.deepseek.baseUrl": {
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "description": "DeepSeek API base URL (also passed to Hermes as DEEPSEEK_BASE_URL)."
+        },
+        "rc.hermes.command": {
+          "type": "string",
+          "default": "hermes",
+          "description": "Hermes Agent CLI executable name or absolute path."
+        },
+        "rc.hermes.provider": {
+          "type": "string",
+          "default": "deepseek",
+          "description": "Value passed to `hermes chat --provider`. The DeepSeek API key is passed as DEEPSEEK_API_KEY."
+        },
+        "rc.hermes.model": {
+          "type": "string",
+          "default": "deepseek-chat",
+          "description": "Model passed to `hermes chat -m`."
+        },
+        "rc.hermes.toolsets": {
+          "type": "string",
+          "default": "",
+          "description": "Optional comma-separated Hermes toolsets (`-t`). Empty uses Hermes' defaults."
+        },
+        "rc.hermes.timeoutMs": {
+          "type": "number",
+          "default": 900000,
+          "minimum": 10000,
+          "description": "Maximum time for one Hermes turn, in milliseconds."
+        },
+        "rc.hermes.docker.container": {
+          "type": "string",
+          "default": "auto",
+          "description": "Where Hermes runs. \"auto\": the local CLI if installed, otherwise a running container from the nousresearch/hermes-agent image. \"off\": local CLI only. Any other value: that container name (run via docker exec)."
+        },
+        "rc.hermes.docker.pathMappings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "markdownDescription": "Host folder → container folder for the workspace when Hermes runs in Docker, e.g. `{ \"C:\\\\codes\": \"/workspace\" }` for a `C:\\codes:/workspace` bind mount. Without a match Hermes works in its own container workspace and cannot see your files."
+        },
+        "rc.hermesFree.model": {
+          "type": "string",
+          "enum": [
+            "deepseek-chat",
+            "deepseek-reasoner"
+          ],
+          "enumDescriptions": [
+            "Fast replies on the free web chat.",
+            "Turns on DeepThink for every model call (slower, stronger planning)."
+          ],
+          "default": "deepseek-chat",
+          "description": "Model Hermes Free asks for. Both run on your free DeepSeek web token."
+        },
+        "rc.hermesFree.maxRepairs": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "How many times the Hermes Free gateway asks the model to fix an invalid tool call (inside the same web session) before reporting an error."
         }
       }
     }
@@ -330,6 +425,7 @@
     "package": "vsce package --no-dependencies",
     "velocity:install": "py -3 -m pip install -r velocity-daemon/requirements.txt",
     "velocity:check": "py -3 -c \"import sys; sys.path.insert(0, 'velocity-daemon'); from velocity.api.app import create_app; print('velocity ok')\"",
+    "test:hermes-free": "npm run compile && node --test scripts/test-hermes-free.mjs",
     "eval": "node evals/run.mjs",
     "eval:dry": "node evals/run.mjs --dry-run",
     "eval:list": "node evals/run.mjs --list",

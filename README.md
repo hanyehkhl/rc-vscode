@@ -22,6 +22,7 @@ A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/
 - **Velocity mode** — faster, more focused agent (Python daemon + session reuse + tool guard)
 - Token setup and re-auth when the DeepSeek token expires
 - **Ashna provider (optional)** — switch the header chip from RC to Ashna, paste your AshnaAI API key (stored in the OS keychain), pick a model for Agent modes and, optionally, your custom Ashna agent for Chat mode
+- **Hermes Free** — run [Hermes Agent](https://github.com/NousResearch/hermes-agent) on the free DeepSeek web chat through a local gateway (delta sync, compact tool manifest, self-repairing tool calls). See [`docs/HERMES-FREE.md`](./docs/HERMES-FREE.md).
 
 ## Requirements
 
