@@ -359,6 +359,7 @@ export type ParsedReply = {
 
 const CALL_PATTERN = /<function_call\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/function_call>/g;
 const ARG_PATTERN = /<argument\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/argument>/g;
+const PARAM_PATTERN = /<parameter\s+name\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/parameter>/g;
 
 function stripFence(text: string): string {
   return text.trim().replace(/^```[a-zA-Z]*\s*\n?/, "").replace(/\n?```\s*$/, "").trim();
@@ -432,6 +433,7 @@ export function parseReply(input: string, tools: OaiTool[]): ParsedReply {
   let guardTrimmed = false;
   let lastEnd = -1;
   let firstStart = -1;
+  let recoveredParams = false;
 
   CALL_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -440,14 +442,20 @@ export function parseReply(input: string, tools: OaiTool[]): ParsedReply {
     lastEnd = match.index + match[0].length;
     const name = match[1].trim();
     const body = match[2];
-    if (/<argument\b/.test(body)) {
+    // Models sometimes write <parameter> (the DSML word) instead of <argument>.
+    // Only honour it when no <argument> is present, so a <parameter> tag inside
+    // file content being written is never mistaken for a call argument.
+    const tag = /<argument\b/.test(body) ? "argument" : /<parameter\b/.test(body) ? "parameter" : "";
+    if (tag) {
+      const pattern = tag === "argument" ? ARG_PATTERN : PARAM_PATTERN;
       const args: Record<string, string> = {};
-      ARG_PATTERN.lastIndex = 0;
+      pattern.lastIndex = 0;
       let arg: RegExpExecArray | null;
-      while ((arg = ARG_PATTERN.exec(body)) !== null) {
+      while ((arg = pattern.exec(body)) !== null) {
         args[arg[1].trim()] = trimEdgeNewlines(arg[2]);
       }
-      if (!Object.keys(args).length) syntaxErrors.push(`"${name}": <argument> blocks are malformed (each needs a closing </argument>).`);
+      if (!Object.keys(args).length) syntaxErrors.push(`"${name}": <${tag}> blocks are malformed (each needs a closing </${tag}>).`);
+      if (tag === "parameter" && Object.keys(args).length) recoveredParams = true;
       calls.push({ name, rawArgs: args });
     } else if (body.trim()) {
       calls.push({ name, rawArgs: stripFence(body) });
@@ -477,7 +485,7 @@ export function parseReply(input: string, tools: OaiTool[]): ParsedReply {
     }
   }
 
-  let recovered = native && calls.length > 0;
+  let recovered = (native || recoveredParams) && calls.length > 0;
   if (!calls.length && !syntaxErrors.length && toolNames.size) {
     const jsonCalls = recoverJsonCalls(raw, toolNames);
     if (jsonCalls.length) {

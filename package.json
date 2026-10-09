@@ -96,7 +96,7 @@
       },
       {
         "command": "rc.switchProvider",
-        "title": "RC: Switch Chat Provider (RC / Ashna / DeepSeek agent / Hermes / Hermes Free)"
+        "title": "RC: Switch Chat Provider (RC / Ashna / DeepSeek agent / Hermes / Hermes Free / Hermes Server)"
       },
       {
         "command": "rc.ashna.setApiKey",
@@ -129,6 +129,14 @@
       {
         "command": "rc.hermesFree.stats",
         "title": "RC: Hermes Free Gateway Stats"
+      },
+      {
+        "command": "rc.hermesFree.setCustomEndpoint",
+        "title": "RC: Hermes — Set Custom Model Endpoint (URL / model / key)"
+      },
+      {
+        "command": "rc.hermesRemote.settings",
+        "title": "RC: Hermes Server Settings (URL / API key)"
       }
     ],
     "configuration": {
@@ -294,14 +302,16 @@
             "ashna",
             "deepseek",
             "hermes",
-            "hermes-free"
+            "hermes-free",
+            "hermes-remote"
           ],
           "enumDescriptions": [
             "Bundled rc CLI with a DeepSeek token.",
             "Ashna API (api.ashna.ai) with your Ashna API key.",
             "Built-in agent (workspace tools, verify loop) on the DeepSeek API with your platform.deepseek.com key.",
             "Nous Research Hermes Agent CLI on the DeepSeek API (needs `hermes` installed).",
-            "Hermes Agent on the free DeepSeek web chat through RC's local gateway: delta sync, compact tool manifest, self-repairing tool calls (needs `hermes` installed and your DeepSeek web token)."
+            "Hermes Agent on the free DeepSeek web chat through RC's local gateway: delta sync, compact tool manifest, self-repairing tool calls (needs `hermes` installed and your DeepSeek web token).",
+            "Hermes Agent running on a server, through its API server (URL + API_SERVER_KEY). Tools run on that server."
           ],
           "default": "rc",
           "description": "Which backend answers chat turns. Switch from the provider chip in the chat header or with 'RC: Switch Chat Provider'."
@@ -412,6 +422,34 @@
           "minimum": 0,
           "maximum": 5,
           "description": "How many times the Hermes Free gateway asks the model to fix an invalid tool call (inside the same web session) before reporting an error."
+        },
+        "rc.hermesFree.source": {
+          "type": "string",
+          "enum": [
+            "deepseek-web",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "Free DeepSeek web chat (your free token) with Delta Sync and self-repairing tool calls.",
+            "Any OpenAI-compatible endpoint: Ollama, vLLM, LM Studio, a hosted API or your own server (native tool calling)."
+          ],
+          "default": "deepseek-web",
+          "description": "Where Hermes Free's gateway gets model answers."
+        },
+        "rc.hermesFree.custom.baseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "OpenAI-compatible base URL used when `rc.hermesFree.source` is `custom`, e.g. `http://localhost:11434/v1` (Ollama) or `https://my-server.com/v1`. The API key is stored in the OS keychain via **RC: Hermes — Set Custom Model Endpoint**."
+        },
+        "rc.hermesFree.custom.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name exactly as the custom endpoint expects it, e.g. qwen2.5-coder:7b."
+        },
+        "rc.hermesRemote.url": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Hermes API server URL for the **Hermes (server)** provider, e.g. `https://my-server.com:8642` (the server needs `API_SERVER_ENABLED=true`). The `API_SERVER_KEY` is stored in the OS keychain via **RC: Hermes Server Settings**."
         }
       }
     }

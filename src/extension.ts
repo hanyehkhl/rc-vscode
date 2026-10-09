@@ -11,7 +11,7 @@ import { setExtensionPath } from "./rcProcess";
 import { runRcInteractive } from "./terminalRunner";
 import { stopVelocityStack } from "./velocity/supervisor";
 import { initAshnaConfig } from "./ashna/config";
-import { openExternalSettings, pickDeepSeekModel, promptDeepSeekApiKey } from "./deepseek/chatBridge";
+import { openExternalSettings, pickDeepSeekModel, promptCustomEndpoint, promptDeepSeekApiKey } from "./deepseek/chatBridge";
 import { initDeepSeekConfig } from "./deepseek/config";
 import { showHermesFreeStats, stopHermesFree } from "./hermes/free";
 import {
@@ -71,6 +71,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("rc.hermes.settings", () => openExternalSettings("hermes")),
     vscode.commands.registerCommand("rc.hermesFree.settings", () => openExternalSettings("hermes-free")),
     vscode.commands.registerCommand("rc.hermesFree.stats", () => showHermesFreeStats()),
+    vscode.commands.registerCommand("rc.hermesFree.setCustomEndpoint", () => promptCustomEndpoint()),
+    vscode.commands.registerCommand("rc.hermesRemote.settings", () => openExternalSettings("hermes-remote")),
     registerAshnaConfigWatcher()
   );
 }

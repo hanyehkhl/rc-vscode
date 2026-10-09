@@ -16,8 +16,8 @@ import {
 } from "./config";
 import { abortAshnaTurn, listAshnaModels, runAshnaTurn } from "./runner";
 import { clearSession } from "./session";
-import { externalProviderState, openExternalSettings, promptDeepSeekApiKey } from "../deepseek/chatBridge";
-import { hasDeepSeekApiKey } from "../deepseek/config";
+import { externalProviderState, openExternalSettings, promptDeepSeekApiKey, promptHermesRemote } from "../deepseek/chatBridge";
+import { getHermesRemote, hasDeepSeekApiKey } from "../deepseek/config";
 
 /**
  * Glue between the chat webview and the Ashna provider. chatCommon forwards the
@@ -165,6 +165,10 @@ export async function handleAshnaMessage(
       if (provider === "ashna" && !hasAshnaApiKey()) {
         postAshnaSetup(webview, "missing");
       }
+      if (provider === "hermes-remote" && !getHermesRemote()) {
+        await promptHermesRemote();
+        postProviderState(webview);
+      }
       if (provider === "deepseek" && !hasDeepSeekApiKey()) {
         await promptDeepSeekApiKey("The DeepSeek agent needs an API key.");
         postProviderState(webview);
@@ -173,7 +177,9 @@ export async function handleAshnaMessage(
     }
     case "requestExternalSetup":
       await openExternalSettings(
-        message.provider === "hermes" || message.provider === "hermes-free" ? message.provider : "deepseek"
+        message.provider === "hermes" || message.provider === "hermes-free" || message.provider === "hermes-remote"
+          ? message.provider
+          : "deepseek"
       );
       postProviderState(webview);
       return true;
@@ -348,6 +354,12 @@ export async function switchProviderCommand(): Promise<void> {
         id: "hermes-free" as const,
         detail: "Hermes Agent on the free DeepSeek web chat via the local gateway (delta sync, self-repairing tool calls)",
         description: current === "hermes-free" ? "current" : undefined
+      },
+      {
+        label: "Hermes (server)",
+        id: "hermes-remote" as const,
+        detail: "A Hermes Agent running on a server, through its API (URL + API_SERVER_KEY); tools run on that server",
+        description: current === "hermes-remote" ? "current" : undefined
       }
     ],
     { title: "RC chat provider" }
@@ -356,6 +368,9 @@ export async function switchProviderCommand(): Promise<void> {
   await setActiveProvider(picked.id);
   if (picked.id === "ashna" && !hasAshnaApiKey()) {
     await promptAshnaApiKey();
+  }
+  if (picked.id === "hermes-remote" && !getHermesRemote()) {
+    await promptHermesRemote();
   }
   if ((picked.id === "deepseek" || picked.id === "hermes") && !hasDeepSeekApiKey()) {
     await promptDeepSeekApiKey();

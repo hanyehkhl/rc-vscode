@@ -8,9 +8,9 @@ import * as vscode from "vscode";
  * ordinary settings so users can also edit them from the Settings UI.
  */
 
-export type ChatProviderId = "rc" | "ashna" | "deepseek" | "hermes" | "hermes-free";
+export type ChatProviderId = "rc" | "ashna" | "deepseek" | "hermes" | "hermes-free" | "hermes-remote";
 
-const PROVIDER_IDS: readonly ChatProviderId[] = ["rc", "ashna", "deepseek", "hermes", "hermes-free"];
+const PROVIDER_IDS: readonly ChatProviderId[] = ["rc", "ashna", "deepseek", "hermes", "hermes-free", "hermes-remote"];
 
 export function parseProviderId(value: unknown): ChatProviderId {
   return PROVIDER_IDS.includes(value as ChatProviderId) ? (value as ChatProviderId) : "rc";

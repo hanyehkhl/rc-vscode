@@ -1,10 +1,10 @@
 import * as http from "http";
 import * as vscode from "vscode";
 import { resolveDeepSeekToken } from "../rcProcess";
-import { getHermesFreeModel } from "../deepseek/config";
+import { getCustomEndpoint, getHermesFreeModel, getHermesFreeSource } from "../deepseek/config";
 import { ensureRcServe, ownsRcServe, restartRcServe } from "../velocity/supervisor";
 import { getVelocitySettings } from "../velocity/settings";
-import { FreeGateway, rcServeUpstream, type GatewayEvent, type GatewayStats } from "./freeGateway";
+import { FreeGateway, rcServeUpstream, type GatewayEvent, type GatewayStats, type ToolEvent } from "./freeGateway";
 
 /**
  * VS Code side of Hermes Free: owns the one gateway instance, makes sure the
@@ -64,25 +64,60 @@ async function ensureServe(): Promise<string> {
   return url;
 }
 
-export type FreeEndpoint = { baseUrl: string; apiKey: string };
+export type FreeEndpoint = {
+  baseUrl: string;
+  apiKey: string;
+  /** Opens the gateway on another local address (Docker bridge on Linux) and returns that URL. */
+  expose: (host: string) => Promise<string>;
+};
+
+/** Human label for the gateway's current model source, for status lines. */
+export function hermesFreeSourceLabel(): string {
+  const custom = getHermesFreeSource() === "custom" ? getCustomEndpoint() : undefined;
+  return custom ? `custom · ${custom.model}` : `free DeepSeek · ${getHermesFreeModel()}`;
+}
 
 export async function ensureHermesFree(): Promise<FreeEndpoint> {
-  if (!resolveDeepSeekToken()) throw new Error("Hermes Free needs your free DeepSeek web token. Use /token to add it.");
-  await ensureServe();
+  if (getHermesFreeSource() === "custom") {
+    // A custom endpoint needs neither the web token nor rc serve.
+    if (!getCustomEndpoint()) {
+      throw new Error("Hermes Free is set to a custom endpoint, but its URL or model is empty. Open RC: Hermes Free Settings → Custom endpoint.");
+    }
+  } else {
+    if (!resolveDeepSeekToken()) throw new Error("Hermes Free needs your free DeepSeek web token. Use /token to add it.");
+    await ensureServe();
+  }
   if (!gateway) {
     gateway = new FreeGateway({
       upstream: rcServeUpstream(ensureServe, resolveDeepSeekToken),
+      direct: () => (getHermesFreeSource() === "custom" ? getCustomEndpoint() : undefined),
       maxRepairs: Math.max(0, vscode.workspace.getConfiguration("rc").get<number>("hermesFree.maxRepairs", 2)),
       thinking: () => getHermesFreeModel() === "deepseek-reasoner",
       log
     });
   }
   await gateway.start();
-  return { baseUrl: gateway.baseUrl, apiKey: gateway.apiKey };
+  const live = gateway;
+  return { baseUrl: live.baseUrl, apiKey: live.apiKey, expose: (host) => live.exposeOn(host) };
 }
 
 export function subscribeHermesFree(listener: (event: GatewayEvent) => void): () => void {
   return gateway ? gateway.subscribe(listener) : () => undefined;
+}
+
+export function subscribeHermesFreeTools(listener: (event: ToolEvent) => void): () => void {
+  return gateway ? gateway.subscribeTools(listener) : () => undefined;
+}
+
+/** "32 tool calls · 21 via delta sync" — the line under a turn's tool cards. */
+export function toolSummaryLine(toolCalls: number, events: GatewayEvent[]): string {
+  if (!toolCalls) return "";
+  const calls = `${toolCalls} tool call${toolCalls === 1 ? "" : "s"}`;
+  if (events.length && events.every((e) => e.kind === "direct")) return `${calls} · ${events.length} model calls · custom endpoint`;
+  const deltas = events.filter((e) => e.kind === "delta").length;
+  const sent = events.reduce((n, e) => n + e.sentChars, 0);
+  const naive = events.reduce((n, e) => n + e.naiveChars, 0);
+  return `${calls} · ${deltas} via delta sync · ${savedPercent(sent, naive)}% less traffic`;
 }
 
 export function resetHermesFreeSessions(): void {
@@ -104,6 +139,13 @@ export function savedPercent(sent: number, naive: number): number {
 
 /** One-line summary of a single model call, for the chat's tool-event lines. */
 export function describeEvent(event: GatewayEvent): string {
+  if (event.kind === "direct") {
+    const direct = [`→ custom endpoint`, `${formatBytes(event.sentChars)}`];
+    if (event.toolCalls.length) direct.push(`→ ${event.toolCalls.join(", ")}`);
+    if (event.failed) direct.push(`✗ ${event.failed.slice(0, 120)}`);
+    direct.push(`${(event.latencyMs / 1000).toFixed(1)}s`);
+    return `Hermes · ${direct.join(" · ")}`;
+  }
   const parts = [
     event.kind === "delta" ? "⚡ delta sync" : "◆ new session",
     `sent ${formatBytes(event.sentChars)}`,
@@ -116,18 +158,6 @@ export function describeEvent(event: GatewayEvent): string {
   if (event.failed) parts.push(`✗ ${event.failed.slice(0, 120)}`);
   parts.push(`${(event.latencyMs / 1000).toFixed(1)}s`);
   return `Hermes Free · ${parts.join(" · ")}`;
-}
-
-export function summarizeEvents(events: GatewayEvent[]): string {
-  if (!events.length) return "";
-  const sent = events.reduce((n, e) => n + e.sentChars, 0);
-  const naive = events.reduce((n, e) => n + e.naiveChars, 0);
-  const repairs = events.reduce((n, e) => n + e.repairs, 0);
-  const deltas = events.filter((e) => e.kind === "delta").length;
-  return (
-    `Hermes Free · ${events.length} model call(s), ${deltas} via delta sync · sent ${formatBytes(sent)} instead of ${formatBytes(naive)} ` +
-    `(${savedPercent(sent, naive)}% less)${repairs ? ` · ${repairs} tool call(s) self-repaired` : ""}`
-  );
 }
 
 export async function showHermesFreeStats(): Promise<void> {

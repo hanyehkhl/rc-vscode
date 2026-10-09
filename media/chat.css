@@ -502,6 +502,85 @@ body {
   word-break: break-word;
 }
 
+/* Agent tool calls: one compact row per call, status on the right. */
+.tool-card {
+  direction: ltr;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 3px 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.25));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tool-card-main {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tool-card-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.tool-card-name {
+  flex-shrink: 0;
+}
+
+.tool-card-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--rc-muted);
+}
+
+.tool-card-status {
+  flex-shrink: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tool-card.is-ok .tool-card-status {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.tool-card.is-fail .tool-card-status {
+  color: var(--vscode-testing-iconFailed, #f14c4c);
+}
+
+.tool-card.is-repaired.is-ok .tool-card-status {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.tool-card.is-running .tool-card-status {
+  color: var(--rc-muted);
+  animation: tool-card-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tool-card-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tool-summary {
+  direction: ltr;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--rc-muted);
+  margin: 2px 0 8px;
+  padding: 0 10px;
+}
+
 .message-continue {
   display: flex;
   align-items: center;

@@ -60,6 +60,7 @@ import {
 } from "./ashna/chatBridge";
 import { getActiveProvider, hasAshnaApiKey } from "./ashna/config";
 import { cancelExternalPrompt, handleExternalPrompt } from "./deepseek/chatBridge";
+import { getHermesFreeSource } from "./deepseek/config";
 
 function isAgentMode(value: unknown): value is UiAgentMode {
   return value === "ask" || value === "write" || value === "auto";
@@ -171,6 +172,10 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
             <button type="button" class="provider-option" data-provider="hermes">
               <strong>Hermes Agent</strong>
               <span id="providerHermesDetail">Nous Hermes Agent CLI · DeepSeek API</span>
+            </button>
+            <button type="button" class="provider-option" data-provider="hermes-remote">
+              <strong>Hermes (server)</strong>
+              <span id="providerHermesRemoteDetail">Hermes on a server via its API · tools run there</span>
             </button>
             <button type="button" class="provider-option" data-provider="hermes-free">
               <strong>Hermes Free</strong>
@@ -550,16 +555,23 @@ export async function handleChatMessage(host: ChatHost, message: Record<string, 
   }
 
   const activeProvider = getActiveProvider();
-  if (activeProvider === "deepseek" || activeProvider === "hermes" || activeProvider === "hermes-free") {
+  if (activeProvider === "deepseek" || activeProvider === "hermes" || activeProvider === "hermes-free" || activeProvider === "hermes-remote") {
     const externalText = message.text.trim();
     if (!externalText) {
       return;
     }
-    if (activeProvider === "hermes-free" && !resolveDeepSeekToken()) {
+    if (activeProvider === "hermes-free" && getHermesFreeSource() !== "custom" && !resolveDeepSeekToken()) {
       postTokenSetup(webview, true);
       return;
     }
-    const name = activeProvider === "hermes" ? "Hermes" : activeProvider === "hermes-free" ? "Hermes Free" : "DeepSeek agent";
+    const name =
+      activeProvider === "hermes"
+        ? "Hermes"
+        : activeProvider === "hermes-free"
+          ? "Hermes Free"
+          : activeProvider === "hermes-remote"
+            ? "Hermes (server)"
+            : "DeepSeek agent";
     const notices: string[] = [];
     if (message.pair) {
       notices.push(`Pair mode is RC-only — running a normal ${name} turn.`);
@@ -808,14 +820,15 @@ export function postStartupDiagnostics(webview: vscode.Webview): void {
 
   // The API-backed providers need no bundled CLI or DeepSeek web token; their
   // keys are requested on first use.
-  if (getActiveProvider() === "deepseek" || getActiveProvider() === "hermes") {
+  if (getActiveProvider() === "deepseek" || getActiveProvider() === "hermes" || getActiveProvider() === "hermes-remote") {
     void webview.postMessage({ type: "ready" });
     return;
   }
 
-  // Hermes Free runs on the same free web token as RC, so ask for it up front.
+  // Hermes Free on the web chat runs on the same free token as RC, so ask for it
+  // up front; a custom endpoint needs no token.
   if (getActiveProvider() === "hermes-free") {
-    if (!resolveDeepSeekToken()) {
+    if (getHermesFreeSource() !== "custom" && !resolveDeepSeekToken()) {
       postTokenSetup(webview, true);
       return;
     }

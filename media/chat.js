@@ -21,7 +21,7 @@ const SLASH_COMMANDS = [
   { name: "/velocity", description: "Cycle Velocity: off / auto / on" },
   { name: "/token", description: "Set DeepSeek token (RC) or Ashna key (Ashna)" },
   { name: "/ashna", description: "Ashna settings: API key, model, agent id" },
-  { name: "/provider", description: "Switch provider: RC · Ashna · DeepSeek agent · Hermes · Hermes Free" },
+  { name: "/provider", description: "Switch provider: RC · Ashna · DeepSeek agent · Hermes · Hermes Free · Hermes Server" },
   { name: "/exit", description: "Close panel" },
   { name: "/quit", description: "Close panel" }
 ];
@@ -87,9 +87,9 @@ const ashnaSetupStatus = document.getElementById("ashnaSetupStatus");
 /** Provider state mirrors the extension's rc.provider setting (source of truth). */
 let provider = "rc";
 let ashnaState = { model: "", agentId: "", hasKey: false };
-let externalState = { deepseek: { model: "", hasKey: false }, hermes: { model: "" }, "hermes-free": { model: "" } };
-const PROVIDERS = ["rc", "ashna", "deepseek", "hermes", "hermes-free"];
-const PROVIDER_NAMES = { rc: "RC", ashna: "Ashna", deepseek: "DeepSeek", hermes: "Hermes", "hermes-free": "Hermes Free" };
+let externalState = { deepseek: { model: "", hasKey: false }, hermes: { model: "" }, "hermes-free": { model: "", source: "deepseek-web" }, "hermes-remote": { model: "", url: "" } };
+const PROVIDERS = ["rc", "ashna", "deepseek", "hermes", "hermes-free", "hermes-remote"];
+const PROVIDER_NAMES = { rc: "RC", ashna: "Ashna", deepseek: "DeepSeek", hermes: "Hermes", "hermes-free": "Hermes Free", "hermes-remote": "Hermes Server" };
 
 let modeIndex = 1;
 let searchEnabled = false;
@@ -190,7 +190,7 @@ function isAshna() {
 
 /** DeepSeek-API providers configured from native input boxes. */
 function isExternal() {
-  return provider === "deepseek" || provider === "hermes" || provider === "hermes-free";
+  return provider === "deepseek" || provider === "hermes" || provider === "hermes-free" || provider === "hermes-remote";
 }
 
 function idleHint() {
@@ -236,9 +236,18 @@ function updateProviderChrome() {
   if (hermesDetail) {
     hermesDetail.textContent = "Hermes Agent CLI · " + (externalState.hermes.model || "?");
   }
+  const hermesRemoteDetail = document.getElementById("providerHermesRemoteDetail");
+  if (hermesRemoteDetail) {
+    hermesRemoteDetail.textContent = externalState["hermes-remote"].url
+      ? "Server · " + externalState["hermes-remote"].url
+      : "Hermes on a server via its API · not set";
+  }
   const hermesFreeDetail = document.getElementById("providerHermesFreeDetail");
   if (hermesFreeDetail) {
-    hermesFreeDetail.textContent = "Free web chat · " + (externalState["hermes-free"].model || "?") + " · delta sync + self-repair";
+    const freeState = externalState["hermes-free"];
+    hermesFreeDetail.textContent = freeState.source === "custom"
+      ? "Custom endpoint · " + (freeState.model || "?")
+      : "Free web chat · " + (freeState.model || "?") + " · delta sync + self-repair";
   }
   document.querySelectorAll(".provider-option[data-provider]").forEach((el) => {
     el.classList.toggle("active", el.getAttribute("data-provider") === provider);
@@ -628,6 +637,42 @@ function appendToolEvent(text) {
   const line = document.createElement("div");
   line.className = "message message-tool";
   line.textContent = text;
+  messages.appendChild(line);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+/** One card per agent tool call; a later message with the same id updates it in place. */
+function upsertToolCard(card) {
+  if (!card || !card.id) return;
+  hideEmpty();
+  let row = messages.querySelector('.tool-card[data-id="' + CSS.escape(card.id) + '"]');
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "message tool-card";
+    row.dataset.id = card.id;
+    row.innerHTML =
+      '<span class="tool-card-main"><span class="tool-card-icon"></span><span class="tool-card-name"></span>' +
+      '<span class="tool-card-detail"></span></span><span class="tool-card-status"></span>';
+    messages.appendChild(row);
+  }
+  row.querySelector(".tool-card-icon").textContent = card.icon || "⚙";
+  row.querySelector(".tool-card-name").textContent = card.name || "";
+  row.querySelector(".tool-card-detail").textContent = card.detail || "";
+  row.title = (card.name || "") + (card.detail ? "  " + card.detail : "");
+  const status = row.querySelector(".tool-card-status");
+  status.textContent = (card.repaired ? (card.state === "ok" && card.status === "✓" ? "🔧 repaired" : "🔧 " + card.status) : card.status) || "";
+  row.classList.toggle("is-running", card.state === "running");
+  row.classList.toggle("is-ok", card.state === "ok");
+  row.classList.toggle("is-fail", card.state === "fail");
+  row.classList.toggle("is-repaired", Boolean(card.repaired));
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function appendToolSummary(text) {
+  if (!text) return;
+  const line = document.createElement("div");
+  line.className = "message tool-summary";
+  line.textContent = "… " + text;
   messages.appendChild(line);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -1298,7 +1343,14 @@ window.addEventListener("message", (event) => {
         hasKey: Boolean(message.deepseek && message.deepseek.hasKey)
       },
       hermes: { model: (message.hermes && message.hermes.model) || "" },
-      "hermes-free": { model: (message.hermesFree && message.hermesFree.model) || "" }
+      "hermes-remote": {
+        model: "server",
+        url: (message.hermesRemote && message.hermesRemote.url) || ""
+      },
+      "hermes-free": {
+        model: (message.hermesFree && message.hermesFree.model) || "",
+        source: (message.hermesFree && message.hermesFree.source) || "deepseek-web"
+      }
     };
     ashnaState = {
       model: message.model || "",
@@ -1398,6 +1450,23 @@ window.addEventListener("message", (event) => {
       velocityMode = message.mode;
       updateChrome();
     }
+    return;
+  }
+
+  if (message.type === "toolCard") {
+    if (stopping || ignoreNextResult) {
+      return;
+    }
+    showChatApp();
+    upsertToolCard(message.card);
+    return;
+  }
+
+  if (message.type === "toolSummary") {
+    if (stopping || ignoreNextResult) {
+      return;
+    }
+    appendToolSummary(message.text || "");
     return;
   }
 

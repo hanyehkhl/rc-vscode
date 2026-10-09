@@ -9,6 +9,8 @@ import {
   isContainerRunning,
   killContainerTurn,
   mapPathIntoContainer,
+  containerHostRoute,
+  isLoopbackUrl,
   toContainerUrl
 } from "./docker";
 
@@ -38,7 +40,14 @@ export type HermesTurnOptions = {
   onStatus: (text: string) => void;
   onPreview: (text: string) => void;
   /** Overrides the DeepSeek API endpoint, e.g. the local Hermes Free gateway. */
-  endpoint?: { baseUrl: string; apiKey: string; model: string; label: string };
+  endpoint?: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    label: string;
+    /** Makes a loopback endpoint reachable on another local address (Linux Docker bridge). */
+    expose?: (host: string) => Promise<string>;
+  };
 };
 
 export type HermesTurnResult =
@@ -91,7 +100,13 @@ function killTree(child: ChildProcess): void {
   if (child.pid === undefined) return;
   if (process.platform === "win32") {
     spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true }).on("error", () => undefined);
-  } else {
+    return;
+  }
+  // Local runs start in their own process group (detached), so its tools and
+  // subprocesses stop with it; docker exec runs fall back to the child alone.
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
     child.kill("SIGTERM");
   }
 }
@@ -168,7 +183,16 @@ export async function runHermesTurn(text: string, options: HermesTurnOptions): P
   let args = hermesArgs;
   let containerTurn: { container: string; turnId: string } | undefined;
   if (runtime.kind === "docker") {
-    if (env.DEEPSEEK_BASE_URL) env.DEEPSEEK_BASE_URL = toContainerUrl(env.DEEPSEEK_BASE_URL);
+    const base = env.DEEPSEEK_BASE_URL;
+    if (base && isLoopbackUrl(base)) {
+      // Docker Desktop forwards host.docker.internal to our loopback; Docker
+      // Engine on Linux needs us to listen on the container's bridge gateway.
+      const route = await containerHostRoute(runtime.container);
+      if (route.bindHost && endpoint?.expose) env.DEEPSEEK_BASE_URL = await endpoint.expose(route.bindHost);
+      else if (route.bindHost) {
+        return { ok: false, cancelled: false, error: `Hermes in Docker cannot reach ${base} on Linux; use a non-loopback DeepSeek base URL.` };
+      } else env.DEEPSEEK_BASE_URL = toContainerUrl(base, route.host);
+    }
     const forwarded = ["PYTHONIOENCODING", "NO_COLOR", ...["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"].filter((n) => env[n])];
     const invocation = dockerExecInvocation(runtime.container, hermesArgs, forwarded);
     command = invocation.command;
@@ -185,6 +209,7 @@ export async function runHermesTurn(text: string, options: HermesTurnOptions): P
     try {
       child = spawn(command, args, {
         cwd: runtime.kind === "docker" ? undefined : root,
+        detached: process.platform !== "win32",
         env,
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"]

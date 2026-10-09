@@ -23,6 +23,10 @@ A VS Code / Cursor chat panel for the [`rc` CLI](https://github.com/RezaParsian/
 - Token setup and re-auth when the DeepSeek token expires
 - **Ashna provider (optional)** — switch the header chip from RC to Ashna, paste your AshnaAI API key (stored in the OS keychain), pick a model for Agent modes and, optionally, your custom Ashna agent for Chat mode
 - **Hermes Free** — run [Hermes Agent](https://github.com/NousResearch/hermes-agent) on the free DeepSeek web chat through a local gateway (delta sync, compact tool manifest, self-repairing tool calls). See [`docs/HERMES-FREE.md`](./docs/HERMES-FREE.md).
+- **Hermes Server** — connect to a Hermes Agent running on a server through its API (URL + `API_SERVER_KEY`): server-side sessions, live tool cards, approvals and stop.
+- **Custom model endpoint** — point Hermes at any OpenAI-compatible URL (Ollama, vLLM, LM Studio, your own server) instead of the free DeepSeek web chat.
+- **Tool cards** — every agent tool call shows as a card with its argument and result (`✓ 7 passed`, `✗ exit 1`, `🔧 repaired`).
+- Works on **Windows, macOS and Linux** (including Docker Engine on Linux).
 
 ## Requirements
 

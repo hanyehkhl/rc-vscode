@@ -42,25 +42,60 @@ export async function isContainerRunning(name: string): Promise<boolean> {
   return out?.trim() === "true";
 }
 
-/** Rewrites loopback hosts so a URL on the host is reachable from a container. */
-export function toContainerUrl(url: string): string {
-  return url.replace(/^(https?:\/\/)(127\.0\.0\.1|localhost|\[::1\])(?=[:/]|$)/i, "$1host.docker.internal");
+export function isLoopbackUrl(url: string): boolean {
+  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?=[:/]|$)/i.test(url);
 }
 
-function normalizeHostPath(p: string): string {
-  return path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+/** Rewrites loopback hosts so a URL on the host is reachable from a container. */
+export function toContainerUrl(url: string, host = "host.docker.internal"): string {
+  return url.replace(/^(https?:\/\/)(127\.0\.0\.1|localhost|\[::1\])(?=[:/]|$)/i, `$1${host}`);
+}
+
+/**
+ * How a container reaches a service that listens on this machine.
+ *
+ * - Docker Desktop (Windows, macOS, and Docker Desktop for Linux) forwards
+ *   host.docker.internal to the host's loopback, so a 127.0.0.1 listener works.
+ * - Docker Engine on Linux has no such forwarding: the container reaches the
+ *   host through its network's bridge gateway (e.g. 172.18.0.1), so the
+ *   service must also listen on that address (`bindHost`).
+ * - A container on the host network shares the host's loopback.
+ */
+export type HostRoute = { host: string; bindHost?: string };
+
+type Runner = (command: string, args: string[]) => Promise<string | undefined>;
+
+export async function containerHostRoute(container: string, platform: string = process.platform, exec: Runner = run): Promise<HostRoute> {
+  if (platform === "win32" || platform === "darwin") return { host: "host.docker.internal" };
+  const info = await exec("docker", ["info", "--format", "{{.OperatingSystem}}"]);
+  if (info && /docker desktop/i.test(info)) return { host: "host.docker.internal" };
+  const mode = (await exec("docker", ["inspect", "-f", "{{.HostConfig.NetworkMode}}", container]))?.trim();
+  if (mode === "host") return { host: "127.0.0.1" };
+  const gateways = await exec("docker", ["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}", container]);
+  const ip = gateways?.split(/\s+/).find((g) => /^\d+\.\d+\.\d+\.\d+$/.test(g));
+  return ip ? { host: ip, bindHost: ip } : { host: "host.docker.internal" };
+}
+
+function normalizeHostPath(p: string, caseInsensitive: boolean): string {
+  const normal = path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "");
+  return caseInsensitive ? normal.toLowerCase() : normal;
 }
 
 /**
  * Maps a host path into the container using `{ hostPrefix: containerPrefix }`
  * entries; the longest matching prefix wins. Returns undefined when unmapped.
+ * Matching ignores case only where the host file system does (Windows).
  */
-export function mapPathIntoContainer(hostPath: string, mappings: Record<string, string>): string | undefined {
-  const target = normalizeHostPath(hostPath);
+export function mapPathIntoContainer(
+  hostPath: string,
+  mappings: Record<string, string>,
+  caseInsensitive = process.platform === "win32"
+): string | undefined {
+  const target = normalizeHostPath(hostPath, caseInsensitive);
   let best: { host: string; container: string } | undefined;
   for (const [host, container] of Object.entries(mappings)) {
     if (!host.trim() || typeof container !== "string" || !container.trim()) continue;
-    const prefix = normalizeHostPath(host);
+    const prefix = normalizeHostPath(host, caseInsensitive);
     if ((target === prefix || target.startsWith(`${prefix}/`)) && (!best || prefix.length > best.host.length)) {
       best = { host: prefix, container: container.trim().replace(/\/+$/, "") };
     }
